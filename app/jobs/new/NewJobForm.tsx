@@ -9,10 +9,12 @@ const initialState: CreateJobState = {};
 export default function NewJobForm({ placements }: { placements: PlacementOption[] }) {
   const [state, formAction, pending] = useActionState(createJobAction, initialState);
 
-  // Populated from spec_versions, not hardcoded — see lib/specs.ts.
-  const adSolutions = [...new Set(placements.map((p) => p.adSolution))];
-  const channels = [...new Set(placements.map((p) => p.channel))];
-  const creativeFormats = [...new Set(placements.map((p) => p.creativeFormat))];
+  // Populated from spec_versions, not hardcoded — see lib/specs.ts. ad_solution
+  // and channel are no longer asked here at all: today every spec_version
+  // shares (RTB, Global), so the server derives it (soleAdSolutionAndChannel())
+  // instead of making the Designer pick from a one-item dropdown. If a second
+  // pair ever gets seeded, that function throws loudly and this form needs an
+  // explicit selector brought back — not silently guessed.
   const placementNames = [...new Set(placements.map((p) => p.placement))];
 
   const label = "block text-sm font-medium text-slate-700 mb-1.5";
@@ -34,72 +36,10 @@ export default function NewJobForm({ placements }: { placements: PlacementOption
           name="driveFolderUrl"
           type="text"
           required
+          autoFocus
           placeholder="https://drive.google.com/drive/folders/..."
           className={input}
         />
-      </div>
-
-      <div className="grid grid-cols-2 gap-4">
-        <div>
-          <label className={label} htmlFor="clientName">
-            Client
-          </label>
-          <input id="clientName" name="clientName" type="text" required className={input} />
-        </div>
-        <div>
-          <label className={label} htmlFor="industry">
-            Industry
-          </label>
-          <input id="industry" name="industry" type="text" className={input} />
-        </div>
-      </div>
-
-      <div className="grid grid-cols-3 gap-4">
-        <div>
-          <label className={label} htmlFor="adSolution">
-            Ad solution
-          </label>
-          <select id="adSolution" name="adSolution" required className={input} defaultValue="">
-            <option value="" disabled>
-              Select…
-            </option>
-            {adSolutions.map((v) => (
-              <option key={v} value={v}>
-                {v}
-              </option>
-            ))}
-          </select>
-        </div>
-        <div>
-          <label className={label} htmlFor="channel">
-            Channel
-          </label>
-          <select id="channel" name="channel" required className={input} defaultValue="">
-            <option value="" disabled>
-              Select…
-            </option>
-            {channels.map((v) => (
-              <option key={v} value={v}>
-                {v}
-              </option>
-            ))}
-          </select>
-        </div>
-        <div>
-          <label className={label} htmlFor="creativeFormat">
-            Creative format
-          </label>
-          <select id="creativeFormat" name="creativeFormat" required className={input} defaultValue="">
-            <option value="" disabled>
-              Select…
-            </option>
-            {creativeFormats.map((v) => (
-              <option key={v} value={v}>
-                {v}
-              </option>
-            ))}
-          </select>
-        </div>
       </div>
 
       <fieldset>
@@ -120,12 +60,32 @@ export default function NewJobForm({ placements }: { placements: PlacementOption
         )}
       </fieldset>
 
-      <div>
-        <label className={label} htmlFor="campaignInstruction">
-          Campaign instruction
-        </label>
-        <textarea id="campaignInstruction" name="campaignInstruction" rows={4} className={input} />
-      </div>
+      <details className="group rounded-md border border-slate-200">
+        <summary className="cursor-pointer select-none px-3 py-2 text-sm font-medium text-slate-600 marker:content-none">
+          <span className="inline-block transition-transform group-open:rotate-90">▸</span> Optional details (client
+          name, industry, campaign instruction)
+        </summary>
+        <div className="space-y-4 border-t border-slate-200 px-3 py-4">
+          <div>
+            <label className={label} htmlFor="clientName">
+              Client <span className="font-normal text-slate-400">— defaults to the Drive folder&rsquo;s name</span>
+            </label>
+            <input id="clientName" name="clientName" type="text" className={input} />
+          </div>
+          <div>
+            <label className={label} htmlFor="industry">
+              Industry
+            </label>
+            <input id="industry" name="industry" type="text" className={input} />
+          </div>
+          <div>
+            <label className={label} htmlFor="campaignInstruction">
+              Campaign instruction
+            </label>
+            <textarea id="campaignInstruction" name="campaignInstruction" rows={4} className={input} />
+          </div>
+        </div>
+      </details>
 
       <div className="flex items-center gap-3 border-t border-slate-100 pt-5">
         <button

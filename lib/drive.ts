@@ -52,6 +52,11 @@ export interface ScannedAsset {
 export interface AccessCheckResult {
   ok: boolean;
   error?: string;
+  /** The folder's own Drive display name, when available — lets Job Create
+   * default the Client field to it instead of requiring a manual typed name
+   * for every job (see app/jobs/new/actions.ts). Fixture mode has no real
+   * folder to name, so it returns null here, not a fabricated name. */
+  folderName?: string | null;
 }
 
 export interface DriveScanner {
@@ -319,11 +324,11 @@ export class RealDriveScanner implements DriveScanner {
       // reason. files.get 404s cleanly when the service account can't see the
       // folder, which is the actual access signal we need.
       const drive = getDriveClient();
-      const res = await drive.files.get({ fileId: folderId, fields: "id,mimeType" });
+      const res = await drive.files.get({ fileId: folderId, fields: "id,name,mimeType" });
       if (res.data.mimeType !== "application/vnd.google-apps.folder") {
         return { ok: false, error: "This ID is not a folder." };
       }
-      return { ok: true };
+      return { ok: true, folderName: res.data.name ?? null };
     } catch (err: unknown) {
       const status = (err as { code?: number; response?: { status?: number } })?.code
         ?? (err as { response?: { status?: number } })?.response?.status;
