@@ -69,6 +69,22 @@ export interface DriveScanner {
 
 const EXCLUDED_FOLDER_NAME = /^(done|resize)$/i;
 
+/** Minimal bounded-concurrency map — no new dependency for something this
+ * small. Preserves input order in the output array regardless of completion
+ * order (callers assume `results[i]` corresponds to `items[i]`). */
+async function runWithConcurrency<T, R>(items: T[], limit: number, fn: (item: T) => Promise<R>): Promise<R[]> {
+  const results: R[] = new Array(items.length);
+  let next = 0;
+  async function worker() {
+    while (next < items.length) {
+      const i = next++;
+      results[i] = await fn(items[i]);
+    }
+  }
+  await Promise.all(Array.from({ length: Math.min(limit, items.length) }, worker));
+  return results;
+}
+
 /** Accepts a full Drive folder URL (any of the common share-link shapes) or a
  * bare folder ID typed directly. Returns null if nothing recognizable found. */
 export function parseFolderId(folderUrl: string): string | null {
@@ -342,10 +358,16 @@ export class RealDriveScanner implements DriveScanner {
     if (!folderId) throw new Error("Could not parse a Drive folder ID out of this URL.");
     const drive = getDriveClient();
     const files = await listFilesRecursive(drive, folderId);
-    const results: ScannedAsset[] = [];
-    for (const f of files) {
-      results.push(await probeFile(drive, f));
-    }
-    return results;
+    // Found 2026-09-07 against a real 10-file/~200MB folder: probeFile()'s
+    // Drive download is the bottleneck (one file measured at 64s for 19.8MB,
+    // ~300KB/s — the actual psd_probe.py parse of that same file took 342ms,
+    // not the bottleneck at all). Processing sequentially meant a real
+    // Designer-sized folder blocked the single synchronous Job Create request
+    // for 10+ minutes with zero progress feedback. A proper fix is Phase 2's
+    // async job queue (§5) — this is a bounded stopgap for Phase 1: bound
+    // concurrency (Drive quotas + this box's bandwidth are the real ceiling,
+    // not something to fix by adding more parallelism than that) rather than
+    // fully serializing every file's download.
+    return runWithConcurrency(files, 4, (f) => probeFile(drive, f));
   }
 }
