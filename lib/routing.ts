@@ -27,6 +27,16 @@ export type Route =
 // safe-zone pixel-level detection, which no code in this repo does (that's
 // real computer-vision-ish work, out of Phase 1 scope — see README). Do not
 // add a stub branch here that always "passes" a check that was never run.
+//
+// `video_compression` is ALSO currently never emitted, as of 2026-09-07 —
+// removed per Lexie's request after a real bug: a video could satisfy a
+// Banner/Native gap (both inherently static-image placements in the current
+// spec seed) whenever its geometry happened to be a decent match, e.g. a
+// Native 1200x627 static-visual slot "matched" against an unrelated MP4. We
+// don't process video at all yet, so the fix is simply to never treat a
+// video as a candidate source for an image target — see the `format !==
+// "MP4"` exclusions below. Once a real video placement gets seeded into
+// spec_dimensions, this needs revisiting (a video SHOULD be eligible then).
 
 export interface RoutingTarget {
   width: number;
@@ -55,12 +65,9 @@ export interface RoutingResult {
   missingComponents: string[];
 }
 
-// 17 Ref §一 / scripts/video_compress.py: MP4, <25MB, ideally <=15s else <=30s.
-// 30s is the hard ceiling used here (matches video_compress.py's docstring).
-const VIDEO_MAX_BYTES = 25 * 1024 * 1024;
-const VIDEO_MAX_DURATION_SEC = 30;
-
-const RASTER_OR_VIDEO_FORMATS = new Set(["JPG", "PNG", "GIF", "MP4"]);
+// Image-only for now — MP4 deliberately excluded, see the Route type comment
+// above. Was RASTER_OR_VIDEO_FORMATS and included MP4 until 2026-09-07.
+const IMAGE_FORMATS = new Set(["JPG", "PNG", "GIF"]);
 
 function isAmbiguous(a: RoutingAsset): boolean {
   return a.classificationConfidence === "ambiguous_requires_campaign_context";
@@ -68,15 +75,6 @@ function isAmbiguous(a: RoutingAsset): boolean {
 
 function targetLabel(t: RoutingTarget): string {
   return `${t.width}x${t.height}`;
-}
-
-function videoSpecViolation(a: RoutingAsset): string | null {
-  const overSize = a.fileSizeBytes != null && a.fileSizeBytes > VIDEO_MAX_BYTES;
-  const overDuration = a.videoDurationSec != null && a.videoDurationSec > VIDEO_MAX_DURATION_SEC;
-  if (overSize && overDuration) return "video_exceeds_size_and_duration";
-  if (overSize) return "video_exceeds_file_size";
-  if (overDuration) return "video_exceeds_duration";
-  return null;
 }
 
 /**
@@ -110,12 +108,7 @@ export function routeTarget(target: RoutingTarget, assets: RoutingAsset[]): Rout
   // support GIF redesign/delivery validation (unsupported_format applies
   // regardless of whether the dimensions happen to line up).
   const exact = usable.find(
-    (a) =>
-      a.width === target.width &&
-      a.height === target.height &&
-      a.format &&
-      RASTER_OR_VIDEO_FORMATS.has(a.format) &&
-      !a.isMultiFrameGif,
+    (a) => a.width === target.width && a.height === target.height && a.format && IMAGE_FORMATS.has(a.format) && !a.isMultiFrameGif,
   );
   if (exact) {
     if (isAmbiguous(exact)) {
@@ -129,29 +122,14 @@ export function routeTarget(target: RoutingTarget, assets: RoutingAsset[]): Rout
     return { route: "ready_to_use", reasonCode: "exact_dimension_match", matchedAssetId: exact.id, missingComponents: [] };
   }
 
-  // 2/3. Generic raster/video retention-bucket scaling (lib/retention.ts,
-  // ported from retention.py — R0-R4 geometric ratio-retention buckets). AI
-  // and multi-frame GIF sources are excluded here on purpose: they fall
-  // through to step 6 (unsupported_format) instead of being scaled like a
-  // normal raster.
-  //
-  // Video-specific override: a video that would otherwise be R0/R2/R3 (i.e.
-  // actually a good geometric match for this target) but violates the
-  // file-size/duration spec routes to `video_compression` instead of
-  // eligible_scale/eligible_crop_fill. Deliberately NOT a coarse "orientation
-  // matches" check (landscape-vs-landscape) as 28 Technical Plan §12's prose
-  // literally reads — a first pass built exactly that and a live E2E run
-  // (this repo's dev-fixture pool has two long-form SofyBe source videos)
-  // immediately showed it swallowing every Banner/Native target, including a
-  // 500x500 square banner matched against a 1920x1080 16:9 video, because
-  // both merely have width>=height. Scoping the override to R0/R2/R3 (i.e.
-  // the video must actually be geometrically close to the target, not just
-  // "not portrait when target isn't portrait") is what §12 clearly *means*
-  // ("orientation matches" as shorthand for "is a plausible source"), not
-  // what it literally says — flagged here as a correction, not a silent
-  // reinterpretation.
+  // 2/3. Generic raster retention-bucket scaling (lib/retention.ts, ported
+  // from retention.py — R0-R4 geometric ratio-retention buckets). AI, video,
+  // and multi-frame GIF sources are excluded here on purpose: AI/multi-frame
+  // GIF fall through to step 6 (unsupported_format); video is excluded per
+  // the Route type comment above (never a candidate for an image target
+  // right now, regardless of how good its geometric fit is).
   const dimensioned = usable.filter(
-    (a) => a.width != null && a.height != null && a.format !== "AI" && !a.isMultiFrameGif && a.format !== "PSD",
+    (a) => a.width != null && a.height != null && a.format !== "AI" && a.format !== "MP4" && !a.isMultiFrameGif && a.format !== "PSD",
   );
   let fallbackNeedsDesigner: { assetId: string; route: string } | null = null;
   if (dimensioned.length > 0) {
@@ -162,14 +140,10 @@ export function routeTarget(target: RoutingTarget, assets: RoutingAsset[]): Rout
     if (best) {
       const [route, pct, sourceWH] = best;
       const matched = dimensioned.find((a) => a.width === sourceWH[0] && a.height === sourceWH[1])!;
-      const videoIssue = matched.format === "MP4" ? videoSpecViolation(matched) : null;
 
       if (route === R0 || route === R2 || route === R3) {
         if (isAmbiguous(matched)) {
           return { route: "blocked_missing_context", reasonCode: "ambiguous_requires_campaign_context", matchedAssetId: matched.id, missingComponents: [] };
-        }
-        if (videoIssue) {
-          return { route: "video_compression", reasonCode: videoIssue, matchedAssetId: matched.id, missingComponents: [] };
         }
         if (route === R0) {
           return { route: "eligible_scale", reasonCode: `retention_${pct}pct_R0`, matchedAssetId: matched.id, missingComponents: [] };

@@ -38,22 +38,31 @@ describe("routeTarget", () => {
     expect(r.matchedAssetId).toBe("a4");
   });
 
-  it("video orientation matches target but exceeds file-size spec -> video_compression", () => {
+  // 2026-09-07: video_compression removed (see lib/routing.ts's Route type
+  // comment) — a video is never a candidate source for a Banner/Native image
+  // target now, no matter how good its geometric fit, since we don't process
+  // video at all yet and a real bug showed unrelated videos "matching" static
+  // slots. These two cases now correctly fall through to
+  // blocked_no_usable_source instead of video_compression.
+  it("video is never a candidate for an image target, even with a great geometric fit -> blocked_no_usable_source", () => {
     const asset: RoutingAsset = {
       id: "a5", format: "MP4", width: 1920, height: 1080, fileSizeBytes: 30_000_000, videoDurationSec: 20, redesignEligible: null,
     };
     const r = routeTarget({ width: 1280, height: 720 }, [asset]); // landscape target, landscape source
-    expect(r.route).toBe("video_compression");
-    expect(r.reasonCode).toBe("video_exceeds_file_size");
+    expect(r.route).toBe("blocked_no_usable_source");
+    expect(r.matchedAssetId).toBeNull();
   });
 
-  it("video orientation matches target but exceeds duration spec -> video_compression", () => {
-    const asset: RoutingAsset = {
+  it("video alongside a usable image source -> the image wins, video is ignored entirely", () => {
+    const video: RoutingAsset = {
       id: "a5b", format: "MP4", width: 1080, height: 1920, fileSizeBytes: 5_000_000, videoDurationSec: 45, redesignEligible: null,
     };
-    const r = routeTarget({ width: 640, height: 960 }, [asset]); // portrait target, portrait source
-    expect(r.route).toBe("video_compression");
-    expect(r.reasonCode).toBe("video_exceeds_duration");
+    const image: RoutingAsset = {
+      id: "a5c", format: "JPG", width: 620, height: 960, fileSizeBytes: 1000, videoDurationSec: null, redesignEligible: null,
+    };
+    const r = routeTarget({ width: 640, height: 960 }, [video, image]);
+    expect(r.route).toBe("eligible_crop_fill");
+    expect(r.matchedAssetId).toBe("a5c");
   });
 
   it("heavy crop (R4), no PSD fallback -> manual_rearrange", () => {
