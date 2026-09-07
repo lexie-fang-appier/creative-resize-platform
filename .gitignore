@@ -24,4 +24,8 @@ venv/
 # Editors
 .vscode/
 .idea/
-outputs/
+
+# Generated creative outputs (real client derivatives) — repo-root only;
+# anchored with a leading slash so this doesn't also match
+# app/api/outputs/, which is real app code, not generated content.
+/outputs/
