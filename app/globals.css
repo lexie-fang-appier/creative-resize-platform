@@ -1,29 +1,36 @@
 @import "tailwindcss";
 
 :root {
-  --bg: #f4f6fa;
+  --bg: #f6f7fb;
   --ink: #0f172a;
   --muted: #64748b;
   --line: #e7ebf0;
-  --font: system-ui, -apple-system, sans-serif;
+  --font: var(--font-sans), system-ui, -apple-system, sans-serif;
   --mono: ui-monospace, "SF Mono", monospace;
   color-scheme: light;
 }
 
 * {
   box-sizing: border-box;
-  margin: 0;
-  padding: 0;
 }
 
 html,
 body {
+  margin: 0;
+  padding: 0;
   background: var(--bg);
   font-family: var(--font);
   color: var(--ink);
   -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
 }
 
-a {
-  color: inherit;
+@layer base {
+  a {
+    color: inherit;
+  }
+}
+
+table {
+  font-variant-numeric: tabular-nums;
 }

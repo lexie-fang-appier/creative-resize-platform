@@ -15,13 +15,14 @@ export default function NewJobForm({ placements }: { placements: PlacementOption
   const creativeFormats = [...new Set(placements.map((p) => p.creativeFormat))];
   const placementNames = [...new Set(placements.map((p) => p.placement))];
 
-  const label = "block text-sm font-medium text-slate-700 mb-1";
-  const input = "w-full rounded border border-slate-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-slate-400";
+  const label = "block text-sm font-medium text-slate-700 mb-1.5";
+  const input =
+    "w-full rounded-md border border-slate-300 px-3 py-2 text-sm text-slate-900 shadow-sm transition-shadow focus:outline-none focus:ring-2 focus:ring-slate-900/20 focus:border-slate-400";
 
   return (
-    <form action={formAction} className="space-y-5 max-w-2xl">
+    <form action={formAction} className="space-y-6">
       {state.error && (
-        <p className="rounded border border-red-300 bg-red-50 px-3 py-2 text-sm text-red-800">{state.error}</p>
+        <p className="rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-800">{state.error}</p>
       )}
 
       <div>
@@ -103,10 +104,13 @@ export default function NewJobForm({ placements }: { placements: PlacementOption
 
       <fieldset>
         <legend className={label}>Target placements</legend>
-        <div className="flex flex-wrap gap-4">
+        <div className="flex flex-wrap gap-2">
           {placementNames.map((p) => (
-            <label key={p} className="flex items-center gap-2 text-sm text-slate-700">
-              <input type="checkbox" name="targetPlacements" value={p} />
+            <label
+              key={p}
+              className="has-[:checked]:border-slate-900 has-[:checked]:bg-slate-900 has-[:checked]:text-white flex cursor-pointer items-center gap-1.5 rounded-full border border-slate-300 px-3 py-1.5 text-sm font-medium text-slate-700 transition-colors hover:border-slate-400"
+            >
+              <input type="checkbox" name="targetPlacements" value={p} className="sr-only" />
               {p}
             </label>
           ))}
@@ -123,13 +127,16 @@ export default function NewJobForm({ placements }: { placements: PlacementOption
         <textarea id="campaignInstruction" name="campaignInstruction" rows={4} className={input} />
       </div>
 
-      <button
-        type="submit"
-        disabled={pending}
-        className="rounded bg-slate-900 px-4 py-2 text-sm font-medium text-white hover:bg-slate-700 disabled:opacity-50"
-      >
-        {pending ? "Creating…" : "Create Job"}
-      </button>
+      <div className="flex items-center gap-3 border-t border-slate-100 pt-5">
+        <button
+          type="submit"
+          disabled={pending}
+          className="rounded-md bg-slate-900 px-4 py-2 text-sm font-medium text-white shadow-sm transition-colors hover:bg-slate-700 disabled:opacity-50"
+        >
+          {pending ? "Creating…" : "Create Job"}
+        </button>
+        <span className="text-xs text-slate-400">Scans the folder and computes the Gap Matrix immediately.</span>
+      </div>
     </form>
   );
 }
