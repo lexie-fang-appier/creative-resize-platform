@@ -44,8 +44,18 @@ must-have 一律 query `spec_dimensions`，不要在 TS/Python 裡建常數表�
 （camelCase 化，行為保持一致）。改動這些檔案前，先看對應的 `.py`
 原始檔的 docstring——很多分支背後有真實票號驗證過的理由，不是隨手寫的規則。
 
+## Phase 進度
+
+Phase 0（Foundations）＋ Phase 1（Read-only Workbench：Job Create／Drive
+Scan／Asset Inventory／Coverage & Gap Matrix／Routing 顯示）已完成，見
+README「What's real vs. what's stubbed」。`lib/routing.ts` 只做顯示，不執行
+任何 resize／crop／OpenAI 呼叫——那是 Phase 2/3。`manual_compliance`／
+`blocked_safezone` 這兩個 route 這個 phase 刻意不實作（沒有 icon/CTA/safe-zone
+偵測邏輯），不要加一個永遠 pass 的假 stub。
+
 ## Out of scope（不要在這個 repo 加）
 
-Job Create／Asset Inventory／Gap Matrix／Prompt Lab 這些 UI 頁面是 Phase 1+，
-不屬於這個 Phase 0 scaffold。真的要動工前先讀 28 Technical Plan §19
+Deterministic 執行（真的 resize/crop-fill/video compression 寫回 Drive）、
+Prompt Lab、AI redesign（OpenAI 呼叫）、Generation Review、Analytics 這些是
+Phase 2+，不屬於目前已完成的範圍。真的要動工前先讀 28 Technical Plan §19
 的分階段計畫。

@@ -1,3 +1,5 @@
+import Link from "next/link";
+
 export default function Home() {
   return (
     <main style={{ padding: "48px", maxWidth: 720 }}>
@@ -7,8 +9,12 @@ export default function Home() {
       <p style={{ color: "var(--muted)", lineHeight: 1.6 }}>
         Internal Designer workbench for scanning client Google Drive folders, computing
         must-have size coverage against versioned specs, and running deterministic /
-        OpenAI-assisted resize with Designer review. This is a Phase 0 foundations scaffold —
-        no product UI is built here yet.
+        OpenAI-assisted resize with Designer review. Phase 1 (Job Create, Drive Scan, Asset
+        Inventory, Coverage &amp; Gap Matrix, routing display) is built — see{" "}
+        <Link href="/jobs" style={{ textDecoration: "underline" }}>
+          Jobs
+        </Link>
+        . Deterministic/AI execution (Phase 2/3) is not built yet.
       </p>
       <p style={{ color: "var(--muted)", marginTop: 16, fontSize: 14 }}>
         Source of truth (local file, not a live link): {" "}

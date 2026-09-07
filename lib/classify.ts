@@ -15,7 +15,7 @@ import {
   UI_CATEGORIES,
 } from "./spec-matrix";
 
-const MIME_MAP: Record<string, string> = {
+export const MIME_MAP: Record<string, string> = {
   "image/jpeg": "JPG",
   "image/jpg": "JPG",
   "image/png": "PNG",
