@@ -1,10 +1,11 @@
+import { listIndustries } from "@/lib/industries";
 import { listPlacements } from "@/lib/specs";
 import NewJobForm from "./NewJobForm";
 
 export const dynamic = "force-dynamic";
 
 export default async function NewJobPage() {
-  const placements = await listPlacements();
+  const [placements, industries] = await Promise.all([listPlacements(), listIndustries()]);
 
   return (
     <main className="mx-auto max-w-2xl px-8 py-10">
@@ -13,7 +14,7 @@ export default async function NewJobPage() {
         Scans the Drive folder, then computes Coverage &amp; Gap Matrix + routing for the selected target placements.
       </p>
       <div className="rounded-xl border border-slate-200 bg-white p-6 shadow-sm">
-        <NewJobForm placements={placements} />
+        <NewJobForm placements={placements} industries={industries} />
       </div>
     </main>
   );

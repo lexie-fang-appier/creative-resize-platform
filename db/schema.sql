@@ -5,6 +5,15 @@
 
 create extension if not exists pgcrypto;
 
+-- See db/migrations/0001_add_industries.sql for the full rationale. This
+-- table's definition lives here for fresh installs; db/migrations/ holds the
+-- incremental history for databases created before a given change.
+create table industries (
+  id uuid primary key default gen_random_uuid(),
+  name text not null unique,
+  created_at timestamptz not null default now()
+);
+
 create table clients (
   id uuid primary key default gen_random_uuid(),
   name text not null,

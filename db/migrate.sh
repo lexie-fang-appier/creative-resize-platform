@@ -17,4 +17,7 @@ psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f "$SCRIPT_DIR/schema.sql"
 echo "Applying seed_rtb_banner_native.sql..."
 psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f "$SCRIPT_DIR/seed_rtb_banner_native.sql"
 
+echo "Applying seed_industries.sql..."
+psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f "$SCRIPT_DIR/seed_industries.sql"
+
 echo "Done."

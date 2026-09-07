@@ -1,12 +1,13 @@
 "use client";
 
 import { useActionState } from "react";
+import type { Industry } from "@/lib/industries";
 import type { PlacementOption } from "@/lib/specs";
 import { createJobAction, type CreateJobState } from "./actions";
 
 const initialState: CreateJobState = {};
 
-export default function NewJobForm({ placements }: { placements: PlacementOption[] }) {
+export default function NewJobForm({ placements, industries }: { placements: PlacementOption[]; industries: Industry[] }) {
   const [state, formAction, pending] = useActionState(createJobAction, initialState);
 
   // Populated from spec_versions, not hardcoded — see lib/specs.ts. ad_solution
@@ -76,7 +77,14 @@ export default function NewJobForm({ placements }: { placements: PlacementOption
             <label className={label} htmlFor="industry">
               Industry
             </label>
-            <input id="industry" name="industry" type="text" className={input} />
+            <select id="industry" name="industry" className={input} defaultValue="">
+              <option value="">Select…</option>
+              {industries.map((i) => (
+                <option key={i.id} value={i.name}>
+                  {i.name}
+                </option>
+              ))}
+            </select>
           </div>
           <div>
             <label className={label} htmlFor="campaignInstruction">
