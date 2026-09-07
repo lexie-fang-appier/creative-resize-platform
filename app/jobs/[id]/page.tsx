@@ -1,11 +1,12 @@
 import { notFound } from "next/navigation";
 import { listAssetsForJob } from "@/lib/assets";
 import { isFixtureMode } from "@/lib/drive";
-import { formatBytes, formatDimensions } from "@/lib/format";
+import { formatDimensions } from "@/lib/format";
 import { computeGapMatrixForJob } from "@/lib/gap-matrix";
 import { isGeneratable, listGenerationRunsForJob } from "@/lib/generation";
 import { getJob } from "@/lib/jobs";
 import { getDecisionsForRuns } from "@/lib/reviews";
+import AssetPreviewRow from "./AssetPreviewRow";
 import { generateAction } from "./generate-actions";
 import RejectForm from "./RejectForm";
 import { approveAction } from "./review-actions";
@@ -128,27 +129,7 @@ export default async function JobDetailPage({ params }: { params: Promise<{ id: 
           </thead>
           <tbody>
             {assets.map((a, i) => (
-              <tr
-                key={a.id}
-                className={`border-b border-slate-100 last:border-b-0 ${
-                  a.scanError ? "bg-red-50" : i % 2 === 1 ? "bg-slate-50/50" : ""
-                }`}
-              >
-                <td className="max-w-xs truncate px-4 py-2.5 font-medium text-slate-800" title={a.filename}>
-                  {a.filename}
-                </td>
-                <td className="px-4 py-2.5 text-slate-600">{a.format ?? a.mimeType ?? "—"}</td>
-                <td className="px-4 py-2.5 text-slate-600">{formatDimensions(a.width, a.height)}</td>
-                <td className="px-4 py-2.5 text-slate-600">{formatBytes(a.fileSizeBytes)}</td>
-                <td className="px-4 py-2.5 text-slate-600">
-                  {a.videoDurationSec != null ? `${a.videoDurationSec}s` : "—"}
-                </td>
-                <td className="px-4 py-2.5 text-slate-600">{formatDimensions(a.psdCanvasW, a.psdCanvasH)}</td>
-                <td className="px-4 py-2.5 text-slate-600">
-                  {a.redesignEligible == null ? "—" : a.redesignEligible ? "Yes" : "No"}
-                </td>
-                <td className="px-4 py-2.5 text-red-700">{a.scanError ?? ""}</td>
-              </tr>
+              <AssetPreviewRow key={a.id} asset={a} striped={i % 2 === 1} />
             ))}
             {assets.length === 0 && (
               <tr>

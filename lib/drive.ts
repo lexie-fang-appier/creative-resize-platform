@@ -140,7 +140,7 @@ function getAuth() {
   });
 }
 
-function getDriveClient(): drive_v3.Drive {
+export function getDriveClient(): drive_v3.Drive {
   return google.drive({ version: "v3", auth: getAuth() as unknown as string });
 }
 
@@ -176,12 +176,14 @@ async function listFilesRecursive(drive: drive_v3.Drive, folderId: string): Prom
   return out;
 }
 
-async function downloadBuffer(drive: drive_v3.Drive, fileId: string): Promise<Buffer> {
+// Exported (was private) so lib/asset-preview.ts can reuse the same auth +
+// download path instead of duplicating Drive client setup.
+export async function downloadBuffer(drive: drive_v3.Drive, fileId: string): Promise<Buffer> {
   const res = await drive.files.get({ fileId, alt: "media" }, { responseType: "arraybuffer" });
   return Buffer.from(res.data as ArrayBuffer);
 }
 
-async function downloadToTemp(drive: drive_v3.Drive, fileId: string, filename: string): Promise<string> {
+export async function downloadToTemp(drive: drive_v3.Drive, fileId: string, filename: string): Promise<string> {
   const buf = await downloadBuffer(drive, fileId);
   const tmp = path.join(os.tmpdir(), `crp-scan-${fileId}-${path.basename(filename)}`);
   await fs.writeFile(tmp, buf);

@@ -67,6 +67,22 @@ export async function insertScannedAssets(jobId: string, assets: ScannedAsset[])
   return inserted;
 }
 
+export async function getAsset(id: string): Promise<AssetRow | null> {
+  const rows = await query<AssetRow>(
+    `select id, job_id as "jobId", drive_file_id as "driveFileId", filename,
+            mime_type as "mimeType", format, width, height,
+            file_size_bytes as "fileSizeBytes", video_duration_sec as "videoDurationSec",
+            psd_canvas_w as "psdCanvasW", psd_canvas_h as "psdCanvasH",
+            content_hash as "contentHash", is_flattened as "isFlattened",
+            has_multiple_artboards as "hasMultipleArtboards",
+            redesign_eligible as "redesignEligible", scan_error as "scanError",
+            created_at as "createdAt"
+     from assets where id = $1`,
+    [id],
+  );
+  return rows[0] ?? null;
+}
+
 export async function listAssetsForJob(jobId: string): Promise<AssetRow[]> {
   return query<AssetRow>(
     `select id, job_id as "jobId", drive_file_id as "driveFileId", filename,
