@@ -309,8 +309,20 @@ export class RealDriveScanner implements DriveScanner {
       return { ok: false, error: "Could not parse a Drive folder ID out of this URL." };
     }
     try {
+      // NOTE: this must be files.get on the folder itself, not files.list with
+      // a `'<id>' in parents` query. The Drive API does not error a parents-scoped
+      // list query when the caller has no visibility into the parent folder at
+      // all — it just returns an empty result, indistinguishable from "folder is
+      // genuinely empty". That made this check pass unconditionally regardless of
+      // real access, discovered 2026-09-07 when a real unshared folder produced a
+      // silently-empty scan_error job instead of a blocked Job Create with a clear
+      // reason. files.get 404s cleanly when the service account can't see the
+      // folder, which is the actual access signal we need.
       const drive = getDriveClient();
-      await drive.files.list({ q: `'${folderId}' in parents and trashed = false`, pageSize: 1, fields: "files(id)" });
+      const res = await drive.files.get({ fileId: folderId, fields: "id,mimeType" });
+      if (res.data.mimeType !== "application/vnd.google-apps.folder") {
+        return { ok: false, error: "This ID is not a folder." };
+      }
       return { ok: true };
     } catch (err: unknown) {
       const status = (err as { code?: number; response?: { status?: number } })?.code
