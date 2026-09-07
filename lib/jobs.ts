@@ -24,6 +24,7 @@ export interface Job {
   id: string;
   clientId: string;
   clientName: string;
+  clientIndustry: string | null;
   driveFolderUrl: string;
   driveFolderId: string;
   adSolution: string;
@@ -108,7 +109,7 @@ export async function addTargetPlacements(jobId: string, placements: string[]): 
 
 export async function getJob(id: string): Promise<Job | null> {
   const rows = await query<Job>(
-    `select j.id, j.client_id as "clientId", c.name as "clientName",
+    `select j.id, j.client_id as "clientId", c.name as "clientName", c.industry as "clientIndustry",
             j.drive_folder_url as "driveFolderUrl", j.drive_folder_id as "driveFolderId",
             j.ad_solution as "adSolution", j.channel, j.creative_format as "creativeFormat",
             j.campaign_instruction as "campaignInstruction", j.status,
@@ -123,7 +124,7 @@ export async function getJob(id: string): Promise<Job | null> {
 
 export async function listJobs(): Promise<Job[]> {
   return query<Job>(
-    `select j.id, j.client_id as "clientId", c.name as "clientName",
+    `select j.id, j.client_id as "clientId", c.name as "clientName", c.industry as "clientIndustry",
             j.drive_folder_url as "driveFolderUrl", j.drive_folder_id as "driveFolderId",
             j.ad_solution as "adSolution", j.channel, j.creative_format as "creativeFormat",
             j.campaign_instruction as "campaignInstruction", j.status,

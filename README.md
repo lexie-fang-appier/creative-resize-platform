@@ -4,12 +4,17 @@ Internal Designer workbench for scanning client Google Drive folders, computing
 must-have creative-size coverage against versioned specs, and running
 deterministic / OpenAI-assisted resize with Designer review.
 
-**Phase 0 (Foundations) + Phase 1 (Read-only Workbench) are built.** Job
-Create → Drive Scan → Asset Inventory → Coverage & Gap Matrix → routing
-display all work end-to-end (real Drive integration + a dev-fixture fallback,
-see below). Deterministic/AI execution (Phase 2/3 — actual resize/crop/OpenAI
-calls) is **not** built — see "What's real vs. what's stubbed" below. Source
-of truth for everything not yet covered (Phase 2+ execution, Prompt Lab, etc.):
+**Phase 0 (Foundations) + Phase 1 (Read-only Workbench) are built, plus two
+pieces pulled forward from later phases at Lexie's request: Prompt Lab and a
+Generate button on the Gap Matrix.** Job Create → Drive Scan → Asset
+Inventory → Coverage & Gap Matrix → routing display all work end-to-end (real
+Drive integration + a dev-fixture fallback, see below). Prompt Lab
+(`/prompts`) manages versioned per-industry prompt recipes. The Gap Matrix's
+Generate button resolves a prompt and queues a `generation_runs` row — it
+does **not** call an image-generation API (no OpenAI key exists yet); see
+"How generation actually runs today" below for what fills that gap right now.
+Source of truth for everything not yet covered (Phase 2+ deterministic
+execution, Analytics, SSO, etc.):
 
 - `Obsidian Vault/02 - Work/Creative Asset Automation/27 PRD - Designer Creative Resize Platform.md`
 - `Obsidian Vault/02 - Work/Creative Asset Automation/28 Technical Plan - Designer Creative Resize Platform.md`
@@ -38,7 +43,9 @@ npm run test
 | `lib/drive-fixture.ts` + `lib/fixtures/dev-assets.ts` | **Real (Phase 1), the active path today.** Implements the same `DriveScanner` interface as `lib/drive.ts` using real ticket metadata ported from `classifier/test_classifier.py` (Mox Bank, Kakao/Naver Troaming, Taobao PSD, Lotte AI artboards, SofyBe video) — not invented data. Active automatically whenever `GOOGLE_SERVICE_ACCOUNT_JSON` is unset; the Job Detail page always shows an amber banner while this is true. |
 | `scripts/psd_probe.py`, `scripts/video_compress.py` | **Ported.** `psd_probe.py` is now actually called by `lib/drive.ts`'s real scan path (unexercised, see above, since there are no live credentials to trigger it) via `child_process`. `video_compress.py` is still Phase 2 (execution) — not called anywhere yet. |
 | Google Drive / OpenAI / Google Workspace SSO | **Drive: real client + dev-fixture fallback (Phase 1), see above. OpenAI / SSO: still config scaffolding only** — `.env.example` placeholders, `lib/auth.ts` config stub, no live OpenAI calls anywhere (that's Phase 3). |
-| Next.js app (`app/`) | **Job List (`app/jobs`), Job Create (`app/jobs/new`), Job Detail w/ Asset Inventory + Coverage & Gap Matrix (`app/jobs/[id]`) are real (Phase 1).** No Prompt Lab / Generation Review / Analytics UI yet — that's Phase 3+. No auth gating on these routes (`lib/auth.ts` still isn't wired into any page). |
+| Next.js app (`app/`) | **Job List/Create/Detail (Phase 1), Prompt Lab (`app/prompts*`), and the Gap Matrix's Generate button are real.** No auth gating on any route yet (`lib/auth.ts` still isn't wired into any page). |
+| `lib/prompts.ts`, `app/prompts*` | **Real.** Recipe CRUD, versioning (exactly one `active` version per recipe, enforced in a transaction), diff (`diff` npm package), rollback, clone. `GLOBAL_SAFETY_RULES` is a platform-wide constant, not a per-recipe column. Seeded with one real recipe: "General — Cross-Industry Baseline", whose content is 16 Ref §8/§9's actual validated cross-industry checklist, not placeholder text — it's the fallback used whenever a job's industry has no dedicated recipe. |
+| `lib/generation.ts`, Gap Matrix's Generate button | **Real prompt resolution + queueing. No execution.** Clicking Generate on an `eligible_scale`/`eligible_crop_fill`/`eligible_psd_redesign`/`video_compression` row with a matched asset resolves the best-matching active prompt recipe (exact industry+format match > partial > the General fallback), composes the full layered prompt, and inserts a `queued` `generation_runs` row — deduped by `cache_key` (source asset + target size + prompt version) per §15. It never calls an image API. |
 
 ### What's NOT implemented (Phase 1 routing scope, flagged not faked)
 
@@ -48,6 +55,42 @@ this repo does (real computer-vision-ish work, explicitly out of Phase 1
 scope). There is no stub that silently "passes" a compliance/safe-zone check
 that was never run — the UI's Gap Matrix footnote says so, and the two routes
 simply never appear as a value.
+
+## How generation actually runs today (no OpenAI key yet)
+
+This is a prototype with no image-generation API key provisioned. Rather than
+block the Generate button entirely, or fake a result, it queues real work and
+a human — Lexie, via Claude Code — fulfills it manually, the same way 16 Ref's
+five validated redesign cases were actually produced (ad-hoc `psd-tools`
+scripting in a Claude session, not a generic pre-written algorithm — 16 Ref's
+own finding is that this needs per-case judgment, not a one-size script).
+
+**The loop today:**
+1. Designer clicks Generate on a Gap Matrix row → a `queued` row lands in
+   `generation_runs` with the fully resolved prompt (`lib/generation.ts`).
+2. Designer asks Claude Code to process it (e.g. "process the queued
+   generation for job X" / "process run <id>"). Claude Code:
+   - Queries `listQueuedRuns()` / `listGenerationRunsForJob(jobId)` to find it.
+   - Downloads the source asset from Drive (same auth `lib/drive.ts` already
+     uses) and reads the `resolved_prompt` column.
+   - Applies the prompt's rules by hand — real `psd-tools`/PIL scripting
+     against the actual layers, per 16 Ref §8/§9 (the General recipe's
+     content) or whatever industry-specific recipe was resolved.
+   - Exports the result and marks the run `succeeded` (`output_asset_uri`)
+     or `failed` with a reason — there's no dedicated helper function for
+     this yet, it's direct SQL/script work.
+3. Designer reviews the output in the Generation Runs section (or wherever
+   it was saved) and approves/rejects — the Designer Review UI itself
+   (approve/reject buttons, regenerate-with-instruction) isn't built yet.
+
+**What this means concretely:** there is currently no automated worker, no
+`npm run process-queue` script, and no guarantee two different Claude Code
+sessions would produce identical output for the same run (by design — this
+is the same "AI-assisted + human review" reality 16 Ref documents, not a
+gap to code around). When real OpenAI/image-gen credentials exist, an
+automated worker can replace step 2 without touching the schema, the Generate
+button, or anything in Prompt Lab — `generation_runs.status` and
+`resolved_prompt` are exactly what that worker would consume.
 
 ## Architecture decisions (do not relitigate without reading the vault docs first)
 

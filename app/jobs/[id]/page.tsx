@@ -3,9 +3,19 @@ import { listAssetsForJob } from "@/lib/assets";
 import { isFixtureMode } from "@/lib/drive";
 import { formatBytes, formatDimensions } from "@/lib/format";
 import { computeGapMatrixForJob } from "@/lib/gap-matrix";
+import { isGeneratable, listGenerationRunsForJob } from "@/lib/generation";
 import { getJob } from "@/lib/jobs";
+import { generateAction } from "./generate-actions";
 
 export const dynamic = "force-dynamic";
+
+const GENERATION_STATUS_STYLES: Record<string, string> = {
+  queued: "bg-amber-100 text-amber-800",
+  processing: "bg-sky-100 text-sky-800",
+  succeeded: "bg-emerald-100 text-emerald-800",
+  failed: "bg-red-100 text-red-800",
+  failed_final: "bg-red-100 text-red-800",
+};
 
 const ROUTE_STYLES: Record<string, string> = {
   ready_to_use: "bg-emerald-100 text-emerald-800",
@@ -47,7 +57,17 @@ export default async function JobDetailPage({ params }: { params: Promise<{ id: 
   const job = await getJob(id);
   if (!job) notFound();
 
-  const [assets, gapMatrix] = await Promise.all([listAssetsForJob(id), computeGapMatrixForJob(id)]);
+  const [assets, gapMatrix, generationRuns] = await Promise.all([
+    listAssetsForJob(id),
+    computeGapMatrixForJob(id),
+    listGenerationRunsForJob(id),
+  ]);
+  const runsByTarget = new Map<string, (typeof generationRuns)[number]>();
+  for (const run of generationRuns) {
+    const key = `${run.targetPlacementId}-${run.specDimensionId}`;
+    // Runs are ordered newest-first (listGenerationRunsForJob) — first write wins, so this ends up as the latest.
+    if (!runsByTarget.has(key)) runsByTarget.set(key, run);
+  }
 
   return (
     <main className="mx-auto max-w-6xl space-y-8 px-8 py-10">
@@ -145,37 +165,63 @@ export default async function JobDetailPage({ params }: { params: Promise<{ id: 
                 <th className="px-4 py-3 font-semibold">Route</th>
                 <th className="px-4 py-3 font-semibold">Reason Code</th>
                 <th className="px-4 py-3 font-semibold">Missing Components</th>
+                <th className="px-4 py-3 font-semibold">Generate</th>
               </tr>
             </thead>
             <tbody>
-              {gapMatrix.map((row, i) => (
-                <tr
-                  key={`${row.jobTargetPlacementId}-${row.specDimension.id}`}
-                  className={`border-b border-slate-100 last:border-b-0 ${i % 2 === 1 ? "bg-slate-50/50" : ""}`}
-                >
-                  <td className="px-4 py-2.5 font-medium text-slate-800">
-                    {row.specVersion.adSolution} · {row.specVersion.channel} · {row.specVersion.placement}
-                  </td>
-                  <td className="px-4 py-2.5 font-mono text-xs text-slate-600">
-                    {formatDimensions(row.specDimension.width, row.specDimension.height)}
-                  </td>
-                  <td className="px-4 py-2.5 text-slate-600">{row.specDimension.mustHaveLevel}</td>
-                  <td className="max-w-[16rem] truncate px-4 py-2.5 text-slate-600" title={row.matchedAssetFilename ?? undefined}>
-                    {row.matchedAssetFilename ?? "—"}
-                  </td>
-                  <td className="px-4 py-2.5 text-slate-600">{row.validationResult}</td>
-                  <td className="px-4 py-2.5">
-                    <RouteBadge route={row.route} />
-                  </td>
-                  <td className="px-4 py-2.5 text-slate-500">{row.reasonCode}</td>
-                  <td className="px-4 py-2.5 text-slate-500">
-                    {row.missingComponents.length > 0 ? row.missingComponents.join(", ") : "—"}
-                  </td>
-                </tr>
-              ))}
+              {gapMatrix.map((row, i) => {
+                const existingRun = runsByTarget.get(`${row.jobTargetPlacementId}-${row.specDimension.id}`);
+                return (
+                  <tr
+                    key={`${row.jobTargetPlacementId}-${row.specDimension.id}`}
+                    className={`border-b border-slate-100 last:border-b-0 ${i % 2 === 1 ? "bg-slate-50/50" : ""}`}
+                  >
+                    <td className="px-4 py-2.5 font-medium text-slate-800">
+                      {row.specVersion.adSolution} · {row.specVersion.channel} · {row.specVersion.placement}
+                    </td>
+                    <td className="px-4 py-2.5 font-mono text-xs text-slate-600">
+                      {formatDimensions(row.specDimension.width, row.specDimension.height)}
+                    </td>
+                    <td className="px-4 py-2.5 text-slate-600">{row.specDimension.mustHaveLevel}</td>
+                    <td className="max-w-[16rem] truncate px-4 py-2.5 text-slate-600" title={row.matchedAssetFilename ?? undefined}>
+                      {row.matchedAssetFilename ?? "—"}
+                    </td>
+                    <td className="px-4 py-2.5 text-slate-600">{row.validationResult}</td>
+                    <td className="px-4 py-2.5">
+                      <RouteBadge route={row.route} />
+                    </td>
+                    <td className="px-4 py-2.5 text-slate-500">{row.reasonCode}</td>
+                    <td className="px-4 py-2.5 text-slate-500">
+                      {row.missingComponents.length > 0 ? row.missingComponents.join(", ") : "—"}
+                    </td>
+                    <td className="px-4 py-2.5">
+                      {existingRun ? (
+                        <span
+                          className={`inline-flex items-center rounded-full px-2.5 py-1 text-xs font-medium ${
+                            GENERATION_STATUS_STYLES[existingRun.status] ?? "bg-slate-100 text-slate-600"
+                          }`}
+                        >
+                          {existingRun.status}
+                        </span>
+                      ) : isGeneratable(row) ? (
+                        <form action={generateAction.bind(null, id, row.jobTargetPlacementId, row.specDimension.id)}>
+                          <button
+                            type="submit"
+                            className="rounded-md border border-slate-300 px-2.5 py-1 text-xs font-medium text-slate-700 shadow-sm transition-colors hover:bg-slate-50"
+                          >
+                            Generate
+                          </button>
+                        </form>
+                      ) : (
+                        <span className="text-xs text-slate-300">—</span>
+                      )}
+                    </td>
+                  </tr>
+                );
+              })}
               {gapMatrix.length === 0 && (
                 <tr>
-                  <td colSpan={8} className="px-4 py-10 text-center text-slate-400">
+                  <td colSpan={9} className="px-4 py-10 text-center text-slate-400">
                     No gap matrix rows yet — this job may not have any matching spec_versions for its target
                     placements.
                   </td>
@@ -187,9 +233,64 @@ export default async function JobDetailPage({ params }: { params: Promise<{ id: 
         <p className="mt-2 text-xs text-slate-400">
           <code className="font-mono">manual_compliance</code> and <code className="font-mono">blocked_safezone</code>{" "}
           are not implemented in Phase 1 — no icon/CTA/end-card/safe-zone detection exists yet, so these two routes
-          are never shown here (see README).
+          are never shown here (see README). Generate is only offered for eligible_scale/eligible_crop_fill/
+          eligible_psd_redesign/video_compression rows that have a matched source asset.
         </p>
       </div>
+
+      {generationRuns.length > 0 && (
+        <SectionCard title="Generation Runs" subtitle={`${generationRuns.length} total`}>
+          <table className="w-full border-collapse text-sm">
+            <thead>
+              <tr className="border-b border-slate-200 bg-slate-50/80 text-left text-xs uppercase tracking-wide text-slate-500">
+                <th className="px-4 py-3 font-semibold">Route</th>
+                <th className="px-4 py-3 font-semibold">Prompt recipe</th>
+                <th className="px-4 py-3 font-semibold">Status</th>
+                <th className="px-4 py-3 font-semibold">Output</th>
+                <th className="px-4 py-3 font-semibold">Created</th>
+                <th className="px-4 py-3 font-semibold">Resolved prompt</th>
+              </tr>
+            </thead>
+            <tbody>
+              {generationRuns.map((run, i) => (
+                <tr key={run.id} className={`border-b border-slate-100 last:border-b-0 align-top ${i % 2 === 1 ? "bg-slate-50/50" : ""}`}>
+                  <td className="px-4 py-2.5">
+                    <RouteBadge route={run.route} />
+                  </td>
+                  <td className="px-4 py-2.5 text-slate-600">{run.promptRecipeName ?? "—"}</td>
+                  <td className="px-4 py-2.5">
+                    <span
+                      className={`inline-flex items-center rounded-full px-2.5 py-1 text-xs font-medium ${
+                        GENERATION_STATUS_STYLES[run.status] ?? "bg-slate-100 text-slate-600"
+                      }`}
+                    >
+                      {run.status}
+                    </span>
+                  </td>
+                  <td className="px-4 py-2.5 text-slate-600">
+                    {run.outputAssetUri ? (
+                      <a href={run.outputAssetUri} className="text-slate-700 underline underline-offset-2">
+                        view
+                      </a>
+                    ) : (
+                      "—"
+                    )}
+                  </td>
+                  <td className="px-4 py-2.5 text-slate-500">{new Date(run.createdAt).toLocaleString()}</td>
+                  <td className="px-4 py-2.5">
+                    <details>
+                      <summary className="cursor-pointer text-xs text-slate-500 marker:content-none">▸ view prompt</summary>
+                      <pre className="mt-2 max-w-md whitespace-pre-wrap rounded-md bg-slate-50 p-2 font-mono text-xs leading-5 text-slate-600">
+                        {run.resolvedPrompt}
+                      </pre>
+                    </details>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </SectionCard>
+      )}
     </main>
   );
 }

@@ -150,6 +150,10 @@ create table generation_runs (
   job_id uuid not null references jobs(id) on delete cascade,
   source_asset_ids_json jsonb not null,
   target_placement_id uuid not null references job_target_placements(id),
+  -- The exact size within target_placement_id this run is for — a placement
+  -- has many required sizes (spec_dimensions rows); see
+  -- db/migrations/0002_add_generation_run_spec_dimension.sql.
+  spec_dimension_id uuid references spec_dimensions(id),
   route text not null,
   prompt_recipe_id uuid references prompt_recipes(id),
   prompt_version_id uuid references prompt_versions(id),
