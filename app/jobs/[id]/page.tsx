@@ -5,7 +5,10 @@ import { formatBytes, formatDimensions } from "@/lib/format";
 import { computeGapMatrixForJob } from "@/lib/gap-matrix";
 import { isGeneratable, listGenerationRunsForJob } from "@/lib/generation";
 import { getJob } from "@/lib/jobs";
+import { getDecisionsForRuns } from "@/lib/reviews";
 import { generateAction } from "./generate-actions";
+import RejectForm from "./RejectForm";
+import { approveAction } from "./review-actions";
 
 export const dynamic = "force-dynamic";
 
@@ -15,6 +18,11 @@ const GENERATION_STATUS_STYLES: Record<string, string> = {
   succeeded: "bg-emerald-100 text-emerald-800",
   failed: "bg-red-100 text-red-800",
   failed_final: "bg-red-100 text-red-800",
+};
+
+const DECISION_STYLES: Record<string, string> = {
+  approved: "bg-emerald-100 text-emerald-800",
+  rejected: "bg-red-100 text-red-800",
 };
 
 const ROUTE_STYLES: Record<string, string> = {
@@ -62,6 +70,7 @@ export default async function JobDetailPage({ params }: { params: Promise<{ id: 
     computeGapMatrixForJob(id),
     listGenerationRunsForJob(id),
   ]);
+  const decisions = await getDecisionsForRuns(generationRuns.map((r) => r.id));
   const runsByTarget = new Map<string, (typeof generationRuns)[number]>();
   for (const run of generationRuns) {
     const key = `${run.targetPlacementId}-${run.specDimensionId}`;
@@ -249,10 +258,13 @@ export default async function JobDetailPage({ params }: { params: Promise<{ id: 
                 <th className="px-4 py-3 font-semibold">Output</th>
                 <th className="px-4 py-3 font-semibold">Created</th>
                 <th className="px-4 py-3 font-semibold">Resolved prompt</th>
+                <th className="px-4 py-3 font-semibold">Review</th>
               </tr>
             </thead>
             <tbody>
-              {generationRuns.map((run, i) => (
+              {generationRuns.map((run, i) => {
+                const decision = decisions.get(run.id);
+                return (
                 <tr key={run.id} className={`border-b border-slate-100 last:border-b-0 align-top ${i % 2 === 1 ? "bg-slate-50/50" : ""}`}>
                   <td className="px-4 py-2.5">
                     <RouteBadge route={run.route} />
@@ -285,8 +297,35 @@ export default async function JobDetailPage({ params }: { params: Promise<{ id: 
                       </pre>
                     </details>
                   </td>
+                  <td className="px-4 py-2.5">
+                    {decision ? (
+                      <div className="space-y-1">
+                        <span
+                          className={`inline-flex items-center rounded-full px-2.5 py-1 text-xs font-medium ${DECISION_STYLES[decision.decision]}`}
+                        >
+                          {decision.decision}
+                        </span>
+                        {decision.rejectionReason && <p className="max-w-[14rem] text-xs text-slate-500">{decision.rejectionReason}</p>}
+                      </div>
+                    ) : run.status === "succeeded" ? (
+                      <div className="flex flex-wrap items-start gap-2">
+                        <form action={approveAction.bind(null, id, run.id)}>
+                          <button
+                            type="submit"
+                            className="rounded-md border border-emerald-200 px-2.5 py-1 text-xs font-medium text-emerald-700 shadow-sm transition-colors hover:bg-emerald-50"
+                          >
+                            Approve
+                          </button>
+                        </form>
+                        <RejectForm jobId={id} generationRunId={run.id} />
+                      </div>
+                    ) : (
+                      <span className="text-xs text-slate-300">—</span>
+                    )}
+                  </td>
                 </tr>
-              ))}
+                );
+              })}
             </tbody>
           </table>
         </SectionCard>
