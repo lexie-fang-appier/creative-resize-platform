@@ -4,7 +4,6 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 
 const LINKS = [
-  { href: "/jobs", label: "Jobs" },
   { href: "/jobs/new", label: "New Job" },
   { href: "/prompts", label: "Prompts" },
 ];
@@ -25,7 +24,10 @@ export default function Nav() {
           {LINKS.map((l) => {
             const active =
               pathname === l.href ||
-              (l.href === "/jobs" && pathname?.startsWith("/jobs/") && pathname !== "/jobs/new") ||
+              // A job detail page (/jobs/[id]) is only ever reached via a redirect
+              // right after creating one — there's no Job List to browse from —
+              // so it counts as "New Job" for nav-highlighting purposes.
+              (l.href === "/jobs/new" && pathname?.startsWith("/jobs/") && pathname !== "/jobs/new") ||
               (l.href === "/prompts" && pathname?.startsWith("/prompts/") && pathname !== "/prompts/new");
             return (
               <Link

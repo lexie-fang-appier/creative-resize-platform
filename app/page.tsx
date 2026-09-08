@@ -30,10 +30,10 @@ export default function Home() {
       </div>
 
       <Link
-        href="/jobs"
+        href="/jobs/new"
         className="mt-8 inline-flex items-center gap-1.5 rounded-md bg-slate-900 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-slate-700"
       >
-        Go to Jobs
+        New Job
         <span aria-hidden>→</span>
       </Link>
 
