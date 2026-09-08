@@ -36,6 +36,9 @@ Industry, placements, and ad-solution/channel options are all read from the
 database, not hardcoded — the dropdown you see is exactly what's seeded in
 `spec_dimensions` / `industries`.
 
+<img src="docs/screenshots/job-create.png" width="500" alt="Job Create form">
+<img src="docs/screenshots/job-list.png" width="700" alt="Job List">
+
 **2. Scan** — a real, recursive Drive listing (skips `Done`/`Resize`
 subfolders, which routinely hold already-shipped creative that would
 otherwise contaminate the source pool). Each file is probed by format:
@@ -58,6 +61,11 @@ almost certainly three different shoots). The platform never guesses which
 assets belong together from filenames — same principle as not letting it
 guess campaign intent from file dimensions.
 
+<img src="docs/screenshots/asset-inventory-grouping.png" width="800" alt="Asset Inventory with content grouping">
+
+*The 4 "MOX Invest" assets are grouped; the other 23 are flagged as
+ungrouped and won't appear in any Gap Matrix until grouped.*
+
 **5. Coverage & Gap Matrix — one per group** — for each group's target
 placements, the platform pulls every required size from the versioned spec
 table and decides, size by size, using only that group's own assets:
@@ -77,6 +85,8 @@ targets regardless of how well the pixel dimensions line up (Banner/Native
 are static-image placements; a video "fitting" one was a real bug, now
 fixed).
 
+<img src="docs/screenshots/gap-matrix.png" width="800" alt="Coverage and Gap Matrix, one per asset group">
+
 **6. Generate** — appears only on rows with an AI-assisted route
 (`eligible_scale`/`eligible_crop_fill`/`eligible_psd_redesign`/
 `video_compression`) that have a matched source. Clicking it:
@@ -90,6 +100,12 @@ fixed).
   (same source + same target size + same prompt version) reuses the
   previous result instead of redoing the work.
 
+Prompts themselves are managed in **Prompt Lab** (`/prompts`) — versioned,
+diffable, rollback-able recipes per industry/format, composed from a fixed
+layer order (global safety rules first, always):
+
+<img src="docs/screenshots/prompt-lab.png" width="800" alt="Prompt Lab recipe detail with resolved prompt preview and version history">
+
 **7. Processing a queued run — currently manual.** There is no image-gen API
 key in this prototype, so nothing happens automatically after Generate. A
 Designer asks Claude Code to process the queued run; Claude Code downloads
@@ -99,11 +115,19 @@ way the underlying redesign methodology was originally validated — see
 16 Ref). This is real, deliberate work per case, not a canned script — see
 "Known limitations" for what it would take to automate this step.
 
+A candidate produced this way did successfully rearrange a 1920x1920 source
+PSD into a 672x560 banner while keeping a government compliance badge
+legible at 249px (above the 190px floor the underlying research
+established) — not shown here since it's a real client's actual creative
+and license number, not test data.
+
 **8. Review** — each finished candidate can be Approved, or Rejected with a
 reason (a genuine "can't articulate why" option is included on purpose,
 since that's a real, recorded outcome in the underlying research, not
 something to force into a false category). Decisions are stored for future
 approval-rate analysis.
+
+<img src="docs/screenshots/review-approve-reject.png" width="800" alt="Designer review: approved and rejected candidates with reasons">
 
 ---
 
