@@ -119,8 +119,8 @@ export default async function JobDetailPage({ params }: { params: Promise<{ id: 
         <AssetInventoryTable jobId={id} assets={assets} groups={groups} />
       </SectionCard>
       <p className="-mt-4 text-xs text-slate-400">
-        Same-size assets can be different content (this repo&rsquo;s own fixture data has three: MOX Invest / MOXPlus /
-        MOXINVEST_PM at overlapping sizes) — the Gap Matrix below is computed per group, never guessed from filenames.
+        Same-size assets can be different content (this repo&rsquo;s own fixture data has three: Ridgeline Invest / RidgelinePlus /
+        RIDGELINE_PM at overlapping sizes) — the Gap Matrix below is computed per group, never guessed from filenames.
         Check assets above and group them before they show up in a Gap Matrix.
       </p>
 

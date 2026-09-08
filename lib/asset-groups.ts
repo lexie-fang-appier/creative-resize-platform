@@ -1,7 +1,7 @@
 /**
  * Designer-defined content groups — see db/migrations/0003_add_asset_groups.sql
  * for the real problem this solves (same-size, different-content assets like
- * "MOX Invest-v1_*" vs "MOXPlus_*" getting silently mixed by the old
+ * "Ridgeline Invest-v1_*" vs "RidgelinePlus_*" getting silently mixed by the old
  * whole-job Gap Matrix). Manual only, never inferred from filenames.
  */
 import { getPool, query } from "./db";

@@ -22,7 +22,7 @@
  * face/text/subject/saliency — union bbox, crop only outside it; measured 0
  * important-content crops across a 100-image test, much smarter than this
  * module's "center crop", which was empirically shown to crop into text on real
- * tickets CAM-406076 / CAM-405162).
+ * tickets CAM-100004 / CAM-100003).
  *
  * Lexie's decision (see 28 Technical Plan §17/§22-Q3): eligible_crop_fill /
  * manual_rearrange routing should ultimately be decided by Creative Advisor's

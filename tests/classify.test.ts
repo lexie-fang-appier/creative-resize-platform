@@ -92,26 +92,26 @@ describe("classifyAsset — 4 對 ambiguous edge case（應 100% 標 ambiguous�
   });
 });
 
-describe("classifyAsset — Part B: CAM-406076 真實 8 個檔（08 Plan §7-1 人工結果核對）", () => {
-  const moxbankFiles: Array<{ name: string; mime: string; width: number; height: number; fileSizeBytes: number }> = [
-    { name: "MOX Invest-v1_300x250.jpg", mime: "image/jpeg", width: 300, height: 250, fileSizeBytes: 82834 },
-    { name: "MOX Invest-v1_300x600.jpg", mime: "image/jpeg", width: 300, height: 600, fileSizeBytes: 148878 },
-    { name: "MOX Invest-v1_300x300.jpg", mime: "image/jpeg", width: 300, height: 300, fileSizeBytes: 93712 },
-    { name: "MOX Invest-v1_320x320.jpg", mime: "image/jpeg", width: 320, height: 320, fileSizeBytes: 105757 },
-    { name: "MOXPlus_300x250.jpg", mime: "image/png", width: 300, height: 250, fileSizeBytes: 60625 },
-    { name: "MOXPlus_300x600.jpg", mime: "image/png", width: 300, height: 600, fileSizeBytes: 92566 },
-    { name: "MOXINVEST_PM_banner_300x600_v2.jpg", mime: "image/jpeg", width: 300, height: 600, fileSizeBytes: 96051 },
-    { name: "MOXINVEST_PM_banner_320x320_v2.jpg", mime: "image/jpeg", width: 320, height: 320, fileSizeBytes: 65463 },
+describe("classifyAsset — Part B: CAM-100004 真實 8 個檔（08 Plan §7-1 人工結果核對）", () => {
+  const ridgelineBankFiles: Array<{ name: string; mime: string; width: number; height: number; fileSizeBytes: number }> = [
+    { name: "Ridgeline Invest-v1_300x250.jpg", mime: "image/jpeg", width: 300, height: 250, fileSizeBytes: 82834 },
+    { name: "Ridgeline Invest-v1_300x600.jpg", mime: "image/jpeg", width: 300, height: 600, fileSizeBytes: 148878 },
+    { name: "Ridgeline Invest-v1_300x300.jpg", mime: "image/jpeg", width: 300, height: 300, fileSizeBytes: 93712 },
+    { name: "Ridgeline Invest-v1_320x320.jpg", mime: "image/jpeg", width: 320, height: 320, fileSizeBytes: 105757 },
+    { name: "RidgelinePlus_300x250.jpg", mime: "image/png", width: 300, height: 250, fileSizeBytes: 60625 },
+    { name: "RidgelinePlus_300x600.jpg", mime: "image/png", width: 300, height: 600, fileSizeBytes: 92566 },
+    { name: "RIDGELINE_PM_banner_300x600_v2.jpg", mime: "image/jpeg", width: 300, height: 600, fileSizeBytes: 96051 },
+    { name: "RIDGELINE_PM_banner_320x320_v2.jpg", mime: "image/jpeg", width: 320, height: 320, fileSizeBytes: 65463 },
   ];
 
   const expectedManual: Record<string, "pass" | "fail"> = {
-    "MOX Invest-v1_300x250.jpg": "pass", "MOX Invest-v1_300x600.jpg": "pass",
-    "MOX Invest-v1_300x300.jpg": "fail", "MOX Invest-v1_320x320.jpg": "fail",
-    "MOXPlus_300x250.jpg": "pass", "MOXPlus_300x600.jpg": "pass",
-    "MOXINVEST_PM_banner_300x600_v2.jpg": "pass", "MOXINVEST_PM_banner_320x320_v2.jpg": "fail",
+    "Ridgeline Invest-v1_300x250.jpg": "pass", "Ridgeline Invest-v1_300x600.jpg": "pass",
+    "Ridgeline Invest-v1_300x300.jpg": "fail", "Ridgeline Invest-v1_320x320.jpg": "fail",
+    "RidgelinePlus_300x250.jpg": "pass", "RidgelinePlus_300x600.jpg": "pass",
+    "RIDGELINE_PM_banner_300x600_v2.jpg": "pass", "RIDGELINE_PM_banner_320x320_v2.jpg": "fail",
   };
 
-  for (const f of moxbankFiles) {
+  for (const f of ridgelineBankFiles) {
     it(`${f.name} matches manual verdict`, () => {
       const r = classifyAsset(f);
       const verdict = r.validated?.verdict ?? "n/a";
@@ -120,7 +120,7 @@ describe("classifyAsset — Part B: CAM-406076 真實 8 個檔（08 Plan §7-1 �
   }
 });
 
-describe("classifyAsset — Part C: CAM-405006 真實 Kakao bizboard vs Naver smart channel", () => {
+describe("classifyAsset — Part C: CAM-100002 真實 Kakao bizboard vs Naver smart channel", () => {
   // 這 2 個檔名在 Drive 上同時出現在 kakao_bizboard/ 和 naver_smartchannel/ 兩個資料夾裡，
   // 檔案本身完全一樣（同尺寸同 mime）——這是「純看素材分不出來」的真實案例，不是理論 edge case。
   const kakaoNaverFiles = [
@@ -140,14 +140,14 @@ describe("classifyAsset — Part C: CAM-405006 真實 Kakao bizboard vs Naver sm
 
 describe("classifyAsset — Part E: PSD/AI 尺寸判斷", () => {
   // 幾何數字取自 probe_source.py 對真實下載檔案的輸出 — fixture 數字，不重新內嵌客戶原始檔案本體。
-  const taobaoPsd = [
+  const cascadeMartPsd = [
     { name: "04-1.psd", mime: "image/vnd.adobe.photoshop", width: 1080, height: 1350 },
     { name: "04-1(同02-2).psd", mime: "image/vnd.adobe.photoshop", width: 1080, height: 1080 },
     { name: "05-1.psd", mime: "image/vnd.adobe.photoshop", width: 1080, height: 1350 },
     { name: "05-2.psd", mime: "image/vnd.adobe.photoshop", width: 1080, height: 1351 },
   ];
 
-  for (const f of taobaoPsd) {
+  for (const f of cascadeMartPsd) {
     it(`${f.name} is unresolved with no size matches`, () => {
       const r = classifyAsset(f);
       expect(r.confidence).toBe("unresolved");
@@ -155,7 +155,7 @@ describe("classifyAsset — Part E: PSD/AI 尺寸判斷", () => {
     });
   }
 
-  const lotteAiArtboards = [
+  const anchorlineAiArtboards = [
     { idx: 0, width: 1200, height: 628 }, { idx: 1, width: 1200, height: 1200 },
     { idx: 2, width: 960, height: 1200 }, { idx: 3, width: 961, height: 451 },
     { idx: 4, width: 800, height: 450 }, { idx: 5, width: 800, height: 1200 },
@@ -165,27 +165,27 @@ describe("classifyAsset — Part E: PSD/AI 尺寸判斷", () => {
   // 2026-09-02 更正：只命中 banner enum、沒有其他規則重疊時，直接給
   // confidence=unique_pending_conversion，detected_group='banner'。命中 native/kakao
   // 相關規則的（或跟 banner 重疊）維持 unresolved。
-  const expectLotte: Record<number, string> = {
+  const expectAnchorline: Record<number, string> = {
     0: "unresolved", 1: "unresolved", 2: "unresolved", 3: "unresolved", 4: "unresolved",
     5: "unresolved", 6: "unique_pending_conversion", 7: "unique_pending_conversion", 8: "unresolved",
   };
 
-  for (const ab of lotteAiArtboards) {
+  for (const ab of anchorlineAiArtboards) {
     it(`AI artboard #${ab.idx} (${ab.width}x${ab.height}) matches expected confidence`, () => {
       const r = classifyAsset({ mime: "application/postscript", width: ab.width, height: ab.height });
-      expect(r.confidence).toBe(expectLotte[ab.idx]);
+      expect(r.confidence).toBe(expectAnchorline[ab.idx]);
     });
   }
 });
 
-describe("classifyAsset — Part D: CAM-401655 真實 video（client 原始素材，非生成結果）", () => {
+describe("classifyAsset — Part D: CAM-100001 真實 video（client 原始素材，非生成結果）", () => {
   // 客戶直接給的原始影片，endCard/icon 都還沒做 — 分類器應正確回報 unresolved，不硬猜。
-  const sofybeVideo = [
+  const vantelVideo = [
     { name: "098824_0021sec_horizontal.mp4", mime: "video/mp4", hasVideo: true, width: 1920, height: 1080, durationSec: 20.6, fileSizeBytes: 26560358 },
     { name: "098824_0021sec_vertical.mp4", mime: "video/mp4", hasVideo: true, width: 1080, height: 1920, durationSec: 20.6, fileSizeBytes: 26469632 },
   ];
 
-  for (const f of sofybeVideo) {
+  for (const f of vantelVideo) {
     it(`${f.name} reports unresolved without guessing`, () => {
       const r = classifyAsset(f);
       expect(r.detectedGroup).toBeNull();

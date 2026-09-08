@@ -6,7 +6,7 @@
  * angles) that happen to share some sizes — the old whole-job matrix could
  * silently pick "best geometric fit" across concepts and mix content that
  * was never meant to be interchangeable (this repo's own fixture data has
- * exactly this: "MOX Invest-v1_*", "MOXPlus_*", "MOXINVEST_PM_banner_*" all
+ * exactly this: "Ridgeline Invest-v1_*", "RidgelinePlus_*", "RIDGELINE_PM_banner_*" all
  * have overlapping sizes but are presumably three different concepts).
  * Grouping is manual (lib/asset-groups.ts), never inferred from filenames,
  * for the same reason campaign context elsewhere in this app is never

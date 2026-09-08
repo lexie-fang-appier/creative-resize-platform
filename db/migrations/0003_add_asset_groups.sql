@@ -4,8 +4,8 @@
 -- asset per target size across the WHOLE job's asset pool — but a client
 -- folder routinely has several distinct creative concepts (different product
 -- photography, different campaign angles) that happen to share some sizes
--- (e.g. this repo's own fixture data: "MOX Invest-v1_*", "MOXPlus_*", and
--- "MOXINVEST_PM_banner_*" all have 300x250/300x600-ish sizes but are
+-- (e.g. this repo's own fixture data: "Ridgeline Invest-v1_*", "RidgelinePlus_*", and
+-- "RIDGELINE_PM_banner_*" all have 300x250/300x600-ish sizes but are
 -- probably three different concepts, not interchangeable). The old logic
 -- could silently mix content from different concepts to fill one job's
 -- must-have list.

@@ -31,7 +31,7 @@ const OLD_NATIVE_MUST_HAVE: SpecDimension[] = [
 ];
 
 describe("checkGap — Part A: real ticket regressions", () => {
-  it("CAM-406076 Mox Bank: inventory sizes normalize to 4/6 hit", () => {
+  it("CAM-100004 Ridgeline Bank: inventory sizes normalize to 4/6 hit", () => {
     const r = checkGap(
       "RTB Banner",
       [[300, 250], [320, 100], [320, 480], [320, 50], [480, 320]],
@@ -41,7 +41,7 @@ describe("checkGap — Part A: real ticket regressions", () => {
     expect(gapBucket(r)).toBe("部分缺must-have(1%-99%)");
   });
 
-  it("CAM-406365 HK ticket: normalized hit=2", () => {
+  it("CAM-100006 HK ticket: normalized hit=2", () => {
     const r = checkGap(
       "RTB Banner",
       [[300, 600], [320, 100], [320, 250], [320, 480], [480, 320]],
@@ -50,7 +50,7 @@ describe("checkGap — Part A: real ticket regressions", () => {
     expect(r.mustHaveHit).toBe(2);
   });
 
-  it("CAM-406125 Taobao KR: already-creative-side sizes hit 3/6", () => {
+  it("CAM-100005 Cascade Mart KR: already-creative-side sizes hit 3/6", () => {
     const r = checkGap("RTB Banner", [[600, 500], [640, 960], [672, 560], [600, 1200]], OLD_BANNER_MUST_HAVE);
     expect(r.mustHaveHit).toBe(3);
   });

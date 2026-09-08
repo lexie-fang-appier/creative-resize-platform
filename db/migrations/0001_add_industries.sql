@@ -10,10 +10,9 @@
 --
 -- Seeded from the industries actually documented with validated redesign
 -- experiments (16 Ref) or real fixture tickets (test_classifier.py), not
--- invented: e-commerce (Coupang), health supplement (Anlene), gaming
--- (NARAKA), food delivery (Keeta), government (Taiwan Workforce Development
--- Agency), banking/finance (Lotte Bank, Mox Invest), telecom (Kakao/Naver
--- roaming products).
+-- invented: e-commerce, health supplement, gaming, food delivery,
+-- government/public sector, banking/finance, telecom (Kakao/Naver roaming
+-- products) — client names genericized here on purpose, see fixtures.
 
 create table if not exists industries (
   id uuid primary key default gen_random_uuid(),

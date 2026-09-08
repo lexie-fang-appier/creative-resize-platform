@@ -78,7 +78,7 @@ export default function AssetInventoryTable({ jobId, assets, groups }: { jobId: 
           type="text"
           value={groupName}
           onChange={(e) => setGroupName(e.target.value)}
-          placeholder="Group name (e.g. MOX Invest concept)"
+          placeholder="Group name (e.g. Ridgeline Invest concept)"
           className="rounded-md border border-slate-300 px-2 py-1 text-xs shadow-sm focus:outline-none focus:ring-2 focus:ring-slate-900/20"
         />
         <button

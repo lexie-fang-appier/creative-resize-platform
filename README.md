@@ -37,7 +37,10 @@ database, not hardcoded — the dropdown you see is exactly what's seeded in
 `spec_dimensions` / `industries`.
 
 <img src="docs/screenshots/job-create.png" width="500" alt="Job Create form">
-<img src="docs/screenshots/job-list.png" width="700" alt="Job List">
+
+There's no Job List page — creation redirects straight into that job's own
+page (Asset Inventory + Gap Matrix), and job-creation events are logged to a
+Google Sheet instead (see "What's built").
 
 **2. Scan** — a real, recursive Drive listing (skips `Done`/`Resize`
 subfolders, which routinely hold already-shipped creative that would
@@ -55,16 +58,16 @@ video don't have a preview yet (see limitations).
 **4. Group assets by content** — check a set of assets and give them a name.
 **This step is manual on purpose.** A client's folder routinely holds several
 distinct creative concepts that happen to share some pixel sizes (this
-repo's own test data has three: `MOX Invest-v1_*`, `MOXPlus_*`, and
-`MOXINVEST_PM_banner_*`, all with overlapping 300x250/300x600-ish sizes but
+repo's own test data has three: `Ridgeline Invest-v1_*`, `RidgelinePlus_*`, and
+`RIDGELINE_PM_banner_*`, all with overlapping 300x250/300x600-ish sizes but
 almost certainly three different shoots). The platform never guesses which
 assets belong together from filenames — same principle as not letting it
 guess campaign intent from file dimensions.
 
-<img src="docs/screenshots/asset-inventory-grouping.png" width="800" alt="Asset Inventory with content grouping">
-
-*The 4 "MOX Invest" assets are grouped; the other 23 are flagged as
-ungrouped and won't appear in any Gap Matrix until grouped.*
+*Not shown here since the only real run captured for this screenshot was a
+real client's folder — but the flow is: check a set of assets, name the
+group, and the rest stay flagged "ungrouped" until they're grouped too, so
+nothing silently ends up in a Gap Matrix by accident.*
 
 **5. Coverage & Gap Matrix — one per group** — for each group's target
 placements, the platform pulls every required size from the versioned spec
@@ -85,7 +88,8 @@ targets regardless of how well the pixel dimensions line up (Banner/Native
 are static-image placements; a video "fitting" one was a real bug, now
 fixed).
 
-<img src="docs/screenshots/gap-matrix.png" width="800" alt="Coverage and Gap Matrix, one per asset group">
+*Not shown here for the same reason — the only real run captured showed a
+real client's asset filenames.*
 
 **6. Generate** — appears only on rows with an AI-assisted route
 (`eligible_scale`/`eligible_crop_fill`/`eligible_psd_redesign`/
@@ -127,7 +131,8 @@ since that's a real, recorded outcome in the underlying research, not
 something to force into a false category). Decisions are stored for future
 approval-rate analysis.
 
-<img src="docs/screenshots/review-approve-reject.png" width="800" alt="Designer review: approved and rejected candidates with reasons">
+*Not shown here — the only real Approve/Reject pair on record is against a
+real client's candidate output.*
 
 ---
 
@@ -244,7 +249,7 @@ generation_runs ─< review_decisions
 
 ```
 app/
-  jobs/                        Job List, Job Create, Job Detail
+  jobs/                        Job Create, Job Detail (no Job List — see "How it works")
     [id]/AssetInventoryTable.tsx, AssetPreviewRow.tsx    Asset grouping + inline preview
     [id]/generate-actions.ts, review-actions.ts, group-actions.ts
   prompts/                     Prompt Lab (list, create, recipe detail w/ versions+diff)
