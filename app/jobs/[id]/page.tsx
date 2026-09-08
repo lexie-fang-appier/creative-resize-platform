@@ -1,4 +1,5 @@
 import { notFound } from "next/navigation";
+import { listGroupsForJob } from "@/lib/asset-groups";
 import { listAssetsForJob } from "@/lib/assets";
 import { isFixtureMode } from "@/lib/drive";
 import { formatDimensions } from "@/lib/format";
@@ -6,7 +7,7 @@ import { computeGapMatrixForJob } from "@/lib/gap-matrix";
 import { isGeneratable, listGenerationRunsForJob } from "@/lib/generation";
 import { getJob } from "@/lib/jobs";
 import { getDecisionsForRuns } from "@/lib/reviews";
-import AssetPreviewRow from "./AssetPreviewRow";
+import AssetInventoryTable from "./AssetInventoryTable";
 import { generateAction } from "./generate-actions";
 import RejectForm from "./RejectForm";
 import { approveAction } from "./review-actions";
@@ -66,15 +67,16 @@ export default async function JobDetailPage({ params }: { params: Promise<{ id: 
   const job = await getJob(id);
   if (!job) notFound();
 
-  const [assets, gapMatrix, generationRuns] = await Promise.all([
+  const [assets, groups, gapMatrix, generationRuns] = await Promise.all([
     listAssetsForJob(id),
+    listGroupsForJob(id),
     computeGapMatrixForJob(id),
     listGenerationRunsForJob(id),
   ]);
   const decisions = await getDecisionsForRuns(generationRuns.map((r) => r.id));
   const runsByTarget = new Map<string, (typeof generationRuns)[number]>();
   for (const run of generationRuns) {
-    const key = `${run.targetPlacementId}-${run.specDimensionId}`;
+    const key = `${run.assetGroupId}-${run.targetPlacementId}-${run.specDimensionId}`;
     // Runs are ordered newest-first (listGenerationRunsForJob) — first write wins, so this ends up as the latest.
     if (!runsByTarget.has(key)) runsByTarget.set(key, run);
   }
@@ -114,119 +116,114 @@ export default async function JobDetailPage({ params }: { params: Promise<{ id: 
       </header>
 
       <SectionCard title="Asset Inventory" subtitle={`${assets.length} scanned`}>
-        <table className="w-full border-collapse text-sm">
-          <thead>
-            <tr className="border-b border-slate-200 bg-slate-50/80 text-left text-xs uppercase tracking-wide text-slate-500">
-              <th className="px-4 py-3 font-semibold">Filename</th>
-              <th className="px-4 py-3 font-semibold">Format</th>
-              <th className="px-4 py-3 font-semibold">Dimensions</th>
-              <th className="px-4 py-3 font-semibold">File Size</th>
-              <th className="px-4 py-3 font-semibold">Video Duration</th>
-              <th className="px-4 py-3 font-semibold">PSD Canvas</th>
-              <th className="px-4 py-3 font-semibold">Redesign Eligible</th>
-              <th className="px-4 py-3 font-semibold">Scan Error</th>
-            </tr>
-          </thead>
-          <tbody>
-            {assets.map((a, i) => (
-              <AssetPreviewRow key={a.id} asset={a} striped={i % 2 === 1} />
-            ))}
-            {assets.length === 0 && (
-              <tr>
-                <td colSpan={8} className="px-4 py-10 text-center text-slate-400">
-                  No assets scanned yet.
-                </td>
-              </tr>
-            )}
-          </tbody>
-        </table>
+        <AssetInventoryTable jobId={id} assets={assets} groups={groups} />
       </SectionCard>
+      <p className="-mt-4 text-xs text-slate-400">
+        Same-size assets can be different content (this repo&rsquo;s own fixture data has three: MOX Invest / MOXPlus /
+        MOXINVEST_PM at overlapping sizes) — the Gap Matrix below is computed per group, never guessed from filenames.
+        Check assets above and group them before they show up in a Gap Matrix.
+      </p>
 
-      <div>
-        <SectionCard title="Coverage & Gap Matrix" subtitle={`${gapMatrix.length} target sizes`}>
-          <table className="w-full border-collapse text-sm">
-            <thead>
-              <tr className="border-b border-slate-200 bg-slate-50/80 text-left text-xs uppercase tracking-wide text-slate-500">
-                <th className="px-4 py-3 font-semibold">Placement / Channel</th>
-                <th className="px-4 py-3 font-semibold">Required Size</th>
-                <th className="px-4 py-3 font-semibold">Must-have</th>
-                <th className="px-4 py-3 font-semibold">Matched Asset</th>
-                <th className="px-4 py-3 font-semibold">Validation</th>
-                <th className="px-4 py-3 font-semibold">Route</th>
-                <th className="px-4 py-3 font-semibold">Reason Code</th>
-                <th className="px-4 py-3 font-semibold">Missing Components</th>
-                <th className="px-4 py-3 font-semibold">Generate</th>
-              </tr>
-            </thead>
-            <tbody>
-              {gapMatrix.map((row, i) => {
-                const existingRun = runsByTarget.get(`${row.jobTargetPlacementId}-${row.specDimension.id}`);
-                return (
-                  <tr
-                    key={`${row.jobTargetPlacementId}-${row.specDimension.id}`}
-                    className={`border-b border-slate-100 last:border-b-0 ${i % 2 === 1 ? "bg-slate-50/50" : ""}`}
-                  >
-                    <td className="px-4 py-2.5 font-medium text-slate-800">
-                      {row.specVersion.adSolution} · {row.specVersion.channel} · {row.specVersion.placement}
-                    </td>
-                    <td className="px-4 py-2.5 font-mono text-xs text-slate-600">
-                      {formatDimensions(row.specDimension.width, row.specDimension.height)}
-                    </td>
-                    <td className="px-4 py-2.5 text-slate-600">{row.specDimension.mustHaveLevel}</td>
-                    <td className="max-w-[16rem] truncate px-4 py-2.5 text-slate-600" title={row.matchedAssetFilename ?? undefined}>
-                      {row.matchedAssetFilename ?? "—"}
-                    </td>
-                    <td className="px-4 py-2.5 text-slate-600">{row.validationResult}</td>
-                    <td className="px-4 py-2.5">
-                      <RouteBadge route={row.route} />
-                    </td>
-                    <td className="px-4 py-2.5 text-slate-500">{row.reasonCode}</td>
-                    <td className="px-4 py-2.5 text-slate-500">
-                      {row.missingComponents.length > 0 ? row.missingComponents.join(", ") : "—"}
-                    </td>
-                    <td className="px-4 py-2.5">
-                      {existingRun ? (
-                        <span
-                          className={`inline-flex items-center rounded-full px-2.5 py-1 text-xs font-medium ${
-                            GENERATION_STATUS_STYLES[existingRun.status] ?? "bg-slate-100 text-slate-600"
-                          }`}
-                        >
-                          {existingRun.status}
-                        </span>
-                      ) : isGeneratable(row) ? (
-                        <form action={generateAction.bind(null, id, row.jobTargetPlacementId, row.specDimension.id)}>
-                          <button
-                            type="submit"
-                            className="rounded-md border border-slate-300 px-2.5 py-1 text-xs font-medium text-slate-700 shadow-sm transition-colors hover:bg-slate-50"
+      {gapMatrix.ungroupedAssetIds.size > 0 && (
+        <div className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
+          {gapMatrix.ungroupedAssetIds.size} asset(s) aren&rsquo;t in a group yet — they won&rsquo;t appear in any Coverage &amp;
+          Gap Matrix below until you group them.
+        </div>
+      )}
+
+      {gapMatrix.groups.map((group) => (
+        <div key={group.groupId}>
+          <SectionCard title={`Coverage & Gap Matrix — ${group.groupName}`} subtitle={`${group.rows.length} target sizes`}>
+            <table className="w-full border-collapse text-sm">
+              <thead>
+                <tr className="border-b border-slate-200 bg-slate-50/80 text-left text-xs uppercase tracking-wide text-slate-500">
+                  <th className="px-4 py-3 font-semibold">Placement / Channel</th>
+                  <th className="px-4 py-3 font-semibold">Required Size</th>
+                  <th className="px-4 py-3 font-semibold">Must-have</th>
+                  <th className="px-4 py-3 font-semibold">Matched Asset</th>
+                  <th className="px-4 py-3 font-semibold">Validation</th>
+                  <th className="px-4 py-3 font-semibold">Route</th>
+                  <th className="px-4 py-3 font-semibold">Reason Code</th>
+                  <th className="px-4 py-3 font-semibold">Missing Components</th>
+                  <th className="px-4 py-3 font-semibold">Generate</th>
+                </tr>
+              </thead>
+              <tbody>
+                {group.rows.map((row, i) => {
+                  const existingRun = runsByTarget.get(`${row.assetGroupId}-${row.jobTargetPlacementId}-${row.specDimension.id}`);
+                  return (
+                    <tr
+                      key={`${row.jobTargetPlacementId}-${row.specDimension.id}`}
+                      className={`border-b border-slate-100 last:border-b-0 ${i % 2 === 1 ? "bg-slate-50/50" : ""}`}
+                    >
+                      <td className="px-4 py-2.5 font-medium text-slate-800">
+                        {row.specVersion.adSolution} · {row.specVersion.channel} · {row.specVersion.placement}
+                      </td>
+                      <td className="px-4 py-2.5 font-mono text-xs text-slate-600">
+                        {formatDimensions(row.specDimension.width, row.specDimension.height)}
+                      </td>
+                      <td className="px-4 py-2.5 text-slate-600">{row.specDimension.mustHaveLevel}</td>
+                      <td className="max-w-[16rem] truncate px-4 py-2.5 text-slate-600" title={row.matchedAssetFilename ?? undefined}>
+                        {row.matchedAssetFilename ?? "—"}
+                      </td>
+                      <td className="px-4 py-2.5 text-slate-600">{row.validationResult}</td>
+                      <td className="px-4 py-2.5">
+                        <RouteBadge route={row.route} />
+                      </td>
+                      <td className="px-4 py-2.5 text-slate-500">{row.reasonCode}</td>
+                      <td className="px-4 py-2.5 text-slate-500">
+                        {row.missingComponents.length > 0 ? row.missingComponents.join(", ") : "—"}
+                      </td>
+                      <td className="px-4 py-2.5">
+                        {existingRun ? (
+                          <span
+                            className={`inline-flex items-center rounded-full px-2.5 py-1 text-xs font-medium ${
+                              GENERATION_STATUS_STYLES[existingRun.status] ?? "bg-slate-100 text-slate-600"
+                            }`}
                           >
-                            Generate
-                          </button>
-                        </form>
-                      ) : (
-                        <span className="text-xs text-slate-300">—</span>
-                      )}
+                            {existingRun.status}
+                          </span>
+                        ) : isGeneratable(row) ? (
+                          <form action={generateAction.bind(null, id, row.assetGroupId, row.jobTargetPlacementId, row.specDimension.id)}>
+                            <button
+                              type="submit"
+                              className="rounded-md border border-slate-300 px-2.5 py-1 text-xs font-medium text-slate-700 shadow-sm transition-colors hover:bg-slate-50"
+                            >
+                              Generate
+                            </button>
+                          </form>
+                        ) : (
+                          <span className="text-xs text-slate-300">—</span>
+                        )}
+                      </td>
+                    </tr>
+                  );
+                })}
+                {group.rows.length === 0 && (
+                  <tr>
+                    <td colSpan={9} className="px-4 py-10 text-center text-slate-400">
+                      No gap matrix rows yet — this job may not have any matching spec_versions for its target
+                      placements.
                     </td>
                   </tr>
-                );
-              })}
-              {gapMatrix.length === 0 && (
-                <tr>
-                  <td colSpan={9} className="px-4 py-10 text-center text-slate-400">
-                    No gap matrix rows yet — this job may not have any matching spec_versions for its target
-                    placements.
-                  </td>
-                </tr>
-              )}
-            </tbody>
-          </table>
-        </SectionCard>
-        <p className="mt-2 text-xs text-slate-400">
-          <code className="font-mono">manual_compliance</code> and <code className="font-mono">blocked_safezone</code>{" "}
-          are not implemented in Phase 1 — no icon/CTA/end-card/safe-zone detection exists yet, so these two routes
-          are never shown here (see README). Generate is only offered for eligible_scale/eligible_crop_fill/
-          eligible_psd_redesign/video_compression rows that have a matched source asset.
-        </p>
-      </div>
+                )}
+              </tbody>
+            </table>
+          </SectionCard>
+          <p className="mt-2 text-xs text-slate-400">
+            <code className="font-mono">manual_compliance</code> and <code className="font-mono">blocked_safezone</code>{" "}
+            are not implemented in Phase 1 — no icon/CTA/end-card/safe-zone detection exists yet, so these two routes
+            are never shown here (see README). Generate is only offered for eligible_scale/eligible_crop_fill/
+            eligible_psd_redesign/video_compression rows that have a matched source asset.
+          </p>
+        </div>
+      ))}
+
+      {gapMatrix.groups.length === 0 && (
+        <div className="rounded-xl border border-slate-200 bg-white px-4 py-10 text-center text-sm text-slate-400 shadow-sm">
+          No asset groups yet — check some assets above and group them to see their Coverage &amp; Gap Matrix.
+        </div>
+      )}
 
       {generationRuns.length > 0 && (
         <SectionCard title="Generation Runs" subtitle={`${generationRuns.length} total`}>

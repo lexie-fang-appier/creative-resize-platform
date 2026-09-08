@@ -95,6 +95,7 @@ export interface GenerationRun {
   sourceAssetIds: string[];
   targetPlacementId: string;
   specDimensionId: string;
+  assetGroupId: string | null;
   route: string;
   promptRecipeId: string | null;
   promptRecipeName: string | null;
@@ -107,7 +108,8 @@ export interface GenerationRun {
 }
 
 const RUN_COLUMNS = `g.id, g.job_id as "jobId", g.source_asset_ids_json as "sourceAssetIds",
-  g.target_placement_id as "targetPlacementId", g.spec_dimension_id as "specDimensionId", g.route,
+  g.target_placement_id as "targetPlacementId", g.spec_dimension_id as "specDimensionId",
+  g.asset_group_id as "assetGroupId", g.route,
   g.prompt_recipe_id as "promptRecipeId", r.name as "promptRecipeName",
   g.prompt_version_id as "promptVersionId", g.resolved_prompt as "resolvedPrompt",
   g.output_asset_uri as "outputAssetUri", g.cache_key as "cacheKey", g.status, g.created_at as "createdAt"`;
@@ -160,14 +162,15 @@ export async function createGenerationRun(job: Job, row: GapMatrixRow): Promise<
 
   const inserted = await query<{ id: string }>(
     `insert into generation_runs
-       (job_id, source_asset_ids_json, target_placement_id, spec_dimension_id, route,
+       (job_id, source_asset_ids_json, target_placement_id, spec_dimension_id, asset_group_id, route,
         prompt_recipe_id, prompt_version_id, resolved_prompt, cache_key, status)
-     values ($1,$2,$3,$4,$5,$6,$7,$8,$9,'queued') returning id`,
+     values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,'queued') returning id`,
     [
       job.id,
       JSON.stringify(sourceAssetIds),
       row.jobTargetPlacementId,
       row.specDimension.id,
+      row.assetGroupId,
       row.route,
       recipe.recipeId,
       recipe.versionId,

@@ -96,10 +96,30 @@ create table asset_layers (
   render_crop_uri text
 );
 
+-- Designer-defined content groups (a set of assets representing one creative
+-- concept) — see db/migrations/0003_add_asset_groups.sql for full rationale.
+-- Manual/checkbox-driven, never inferred from filenames.
+create table asset_groups (
+  id uuid primary key default gen_random_uuid(),
+  job_id uuid not null references jobs(id) on delete cascade,
+  name text not null,
+  created_at timestamptz not null default now()
+);
+
+create table asset_group_members (
+  group_id uuid not null references asset_groups(id) on delete cascade,
+  asset_id uuid not null references assets(id) on delete cascade,
+  primary key (group_id, asset_id)
+);
+
 create table gap_matrix_entries (
   id uuid primary key default gen_random_uuid(),
   job_target_placement_id uuid not null references job_target_placements(id) on delete cascade,
   spec_dimension_id uuid not null references spec_dimensions(id),
+  -- One matrix PER GROUP now, not one per job — the same (placement, size)
+  -- pair gets a separate row (and possibly a different matched_asset_id and
+  -- route) for every asset_group in the job.
+  asset_group_id uuid references asset_groups(id) on delete cascade,
   matched_asset_id uuid references assets(id),
   validation_result text,
   missing_components_json jsonb,
@@ -154,6 +174,10 @@ create table generation_runs (
   -- has many required sizes (spec_dimensions rows); see
   -- db/migrations/0002_add_generation_run_spec_dimension.sql.
   spec_dimension_id uuid references spec_dimensions(id),
+  -- Which content group's asset pool this run drew its source from — for
+  -- traceability in the Review UI, not used to re-derive routing (the
+  -- source_asset_ids_json already pins the exact asset used).
+  asset_group_id uuid references asset_groups(id),
   route text not null,
   prompt_recipe_id uuid references prompt_recipes(id),
   prompt_version_id uuid references prompt_versions(id),
