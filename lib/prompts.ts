@@ -20,6 +20,7 @@
  * transaction.
  */
 import { getPool, query } from "./db";
+import { logPromptVersion } from "./sheets-log";
 
 export const GLOBAL_SAFETY_RULES = `Do not rewrite the client's copy or CTA text. Do not alter the logo. Do not invent products, people, or compliance/legal content that isn't in the source. Do not remove required CTAs, disclaimers, or certification marks. This output is a candidate only — it is never auto-published, and must be reviewed by a Designer before use.`;
 
@@ -151,7 +152,25 @@ export async function createRecipe(input: CreateRecipeInput): Promise<{ recipeId
       ],
     );
     await client.query("commit");
-    return { recipeId, versionId: versionRes.rows[0].id as string };
+    const versionId = versionRes.rows[0].id as string;
+
+    await logPromptVersion({
+      recipeId,
+      recipeName: input.name,
+      versionId,
+      versionNumber: 1,
+      industry: input.industry,
+      creativeFormat: input.creativeFormat,
+      basePrompt: input.basePrompt,
+      industryRules: input.industryRules,
+      layoutRules: input.layoutRules,
+      requiredElements: input.requiredElements,
+      forbiddenChanges: input.forbiddenChanges,
+      status: "active",
+      createdBy: input.createdBy,
+    });
+
+    return { recipeId, versionId };
   } catch (err) {
     await client.query("rollback");
     throw err;
@@ -204,7 +223,26 @@ export async function createVersion(recipeId: string, input: CreateVersionInput)
     );
     await client.query(`update prompt_recipes set updated_by = $2, updated_at = now() where id = $1`, [recipeId, input.createdBy]);
     await client.query("commit");
-    return res.rows[0].id as string;
+    const versionId = res.rows[0].id as string;
+
+    const recipe = await getRecipe(recipeId);
+    await logPromptVersion({
+      recipeId,
+      recipeName: recipe?.name ?? recipeId,
+      versionId,
+      versionNumber: nextVersion,
+      industry: recipe?.industry ?? null,
+      creativeFormat: recipe?.creativeFormat ?? null,
+      basePrompt: input.basePrompt,
+      industryRules: input.industryRules,
+      layoutRules: input.layoutRules,
+      requiredElements: input.requiredElements,
+      forbiddenChanges: input.forbiddenChanges,
+      status: input.publish ? "active" : "draft",
+      createdBy: input.createdBy,
+    });
+
+    return versionId;
   } catch (err) {
     await client.query("rollback");
     throw err;

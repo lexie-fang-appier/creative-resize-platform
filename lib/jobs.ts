@@ -11,6 +11,7 @@
  * are expected to call it in the right order (see app/jobs/new/actions.ts).
  */
 import { query } from "./db";
+import { logNewJob } from "./sheets-log";
 
 export type JobStatus =
   | "draft"
@@ -98,6 +99,20 @@ export async function createJob(input: CreateJobInput): Promise<Job> {
 
   const full = await getJob(job.id);
   if (!full) throw new Error("createJob: failed to read back the row that was just inserted");
+
+  await logNewJob({
+    jobId: full.id,
+    clientName: full.clientName,
+    industry: full.clientIndustry,
+    driveFolderUrl: full.driveFolderUrl,
+    adSolution: full.adSolution,
+    channel: full.channel,
+    creativeFormat: full.creativeFormat,
+    campaignInstruction: full.campaignInstruction,
+    targetPlacements: input.targetPlacements,
+    createdBy: full.createdBy,
+  });
+
   return full;
 }
 
