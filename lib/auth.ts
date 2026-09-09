@@ -2,8 +2,9 @@ import type { NextAuthOptions } from "next-auth";
 import GoogleProvider from "next-auth/providers/google";
 
 // Mirrors ai-tool-hub's lib/auth.ts domain-restriction pattern (same company,
-// same SSO requirement). Config only — not wired into any pages in this
-// Phase 0 scaffold; see README "What's real vs. what's stubbed".
+// same SSO requirement). Wired in via app/AuthGate.tsx (client-side redirect
+// to /login) and lib/require-session.ts (server-side enforcement in every
+// Server Action and the two file-serving API routes).
 const ALLOWED_DOMAIN = "appier.com";
 
 export const authOptions: NextAuthOptions = {

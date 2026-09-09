@@ -4,6 +4,7 @@ import { revalidatePath } from "next/cache";
 import { computeGapMatrixForJob } from "@/lib/gap-matrix";
 import { createGenerationRun } from "@/lib/generation";
 import { getJob } from "@/lib/jobs";
+import { requireSessionEmail } from "@/lib/require-session";
 
 /** Bound via .bind(null, jobId, assetGroupId, jobTargetPlacementId, specDimensionId)
  * from the Gap Matrix row's Generate button. assetGroupId is required now —
@@ -18,6 +19,8 @@ export async function generateAction(
   jobTargetPlacementId: string,
   specDimensionId: string,
 ): Promise<void> {
+  await requireSessionEmail();
+
   const job = await getJob(jobId);
   if (!job) throw new Error(`Job ${jobId} not found.`);
 

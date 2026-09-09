@@ -5,17 +5,20 @@
  * fails when clicked from a page served over http(s) — browsers block that
  * navigation for security reasons. This is a stopgap for local dev before
  * Drive write-back exists (28 Technical Plan §6/§14: outputs eventually go
- * to a Drive draft/approved folder, not disk) — no auth here matches the
- * rest of Phase 1 (nothing is auth-gated yet), not a deliberate choice to
- * leave this open long-term.
+ * to a Drive draft/approved folder, not disk).
  */
+import { getServerSession } from "next-auth";
 import { readFile } from "node:fs/promises";
 import path from "node:path";
+import { authOptions } from "@/lib/auth";
 import { NextResponse } from "next/server";
 
 const OUTPUTS_DIR = path.join(process.cwd(), "outputs");
 
 export async function GET(_req: Request, { params }: { params: Promise<{ filename: string }> }) {
+  const session = await getServerSession(authOptions);
+  if (!session?.user?.email) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+
   const { filename } = await params;
   // Reject anything that isn't a bare filename — no traversal out of outputs/.
   if (filename.includes("/") || filename.includes("..")) {

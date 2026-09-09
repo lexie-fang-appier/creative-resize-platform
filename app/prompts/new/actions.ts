@@ -2,6 +2,7 @@
 
 import { redirect } from "next/navigation";
 import { createRecipe } from "@/lib/prompts";
+import { requireSessionEmail } from "@/lib/require-session";
 
 export interface CreateRecipeState {
   error?: string;
@@ -15,6 +16,8 @@ function splitLines(v: FormDataEntryValue | null): string[] {
 }
 
 export async function createRecipeAction(_prevState: CreateRecipeState, formData: FormData): Promise<CreateRecipeState> {
+  const actorEmail = await requireSessionEmail();
+
   const name = String(formData.get("name") ?? "").trim();
   const industry = String(formData.get("industry") ?? "").trim() || null;
   const creativeFormat = String(formData.get("creativeFormat") ?? "").trim() || null;
@@ -41,7 +44,7 @@ export async function createRecipeAction(_prevState: CreateRecipeState, formData
     sourceType,
     aspectRatioCategory,
     applicableTargetSizes,
-    createdBy: "dev-designer",
+    createdBy: actorEmail,
     basePrompt,
     industryRules,
     layoutRules,

@@ -26,6 +26,7 @@ import { insertScannedAssets } from "@/lib/assets";
 import { getDriveScanner, parseFolderId } from "@/lib/drive";
 import { computeGapMatrixForJob } from "@/lib/gap-matrix";
 import { createJob, updateJobStatus } from "@/lib/jobs";
+import { requireSessionEmail } from "@/lib/require-session";
 import { listPlacements, soleAdSolutionAndChannel } from "@/lib/specs";
 
 export interface CreateJobState {
@@ -33,6 +34,8 @@ export interface CreateJobState {
 }
 
 export async function createJobAction(_prevState: CreateJobState, formData: FormData): Promise<CreateJobState> {
+  const actorEmail = await requireSessionEmail();
+
   const driveFolderUrl = String(formData.get("driveFolderUrl") ?? "").trim();
   const clientNameInput = String(formData.get("clientName") ?? "").trim();
   const industry = String(formData.get("industry") ?? "").trim() || null;
@@ -71,9 +74,7 @@ export async function createJobAction(_prevState: CreateJobState, formData: Form
     creativeFormat,
     campaignInstruction,
     targetPlacements,
-    // No SSO wired into pages yet (see lib/auth.ts — config-only, per README).
-    // Placeholder actor until auth is wired into this route.
-    createdBy: "dev-designer",
+    createdBy: actorEmail,
   });
 
   try {

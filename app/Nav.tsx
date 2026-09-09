@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
+import { signOut, useSession } from "next-auth/react";
 
 const LINKS = [
   { href: "/jobs/new", label: "New Job" },
@@ -10,6 +11,7 @@ const LINKS = [
 
 export default function Nav() {
   const pathname = usePathname();
+  const { data: session } = useSession();
 
   return (
     <header className="sticky top-0 z-10 border-b border-slate-200 bg-white/85 backdrop-blur">
@@ -45,6 +47,18 @@ export default function Nav() {
         <span className="ml-auto rounded-full border border-amber-300 bg-amber-50 px-2.5 py-1 text-xs font-medium text-amber-800">
           Phase 1 · internal preview
         </span>
+        {session?.user?.email && (
+          <div className="flex items-center gap-2 text-xs">
+            <span className="text-slate-500">{session.user.email}</span>
+            <button
+              type="button"
+              onClick={() => signOut({ callbackUrl: "/login" })}
+              className="rounded-md px-2 py-1 font-medium text-slate-500 transition-colors hover:bg-slate-100 hover:text-slate-900"
+            >
+              Sign out
+            </button>
+          </div>
+        )}
       </div>
     </header>
   );
