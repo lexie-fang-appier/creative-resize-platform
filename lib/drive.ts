@@ -234,7 +234,11 @@ interface PsdProbeResult {
 function hasSemanticLayerNames(elements: PsdProbeResult["elements"]): boolean {
   if (!elements || elements.length === 0) return false;
   if (elements.length === 1 && elements[0].error) return false;
-  const genericName = /^(圖層|layer)\s*\d*$/i;
+  // 圖層 = Traditional, 图层 = Simplified — real source PSDs from mainland
+  // China-authored campaigns (e.g. Taobao) use the Simplified default, which
+  // this regex missed until 2026-09-09's layer-metadata experiment surfaced
+  // a real file where "图层 2" was wrongly counted as a semantic name.
+  const genericName = /^(圖層|图层|layer)\s*\d*$/i;
   return elements.some((el) => el.name && el.name.trim() !== "" && !genericName.test(el.name.trim()));
 }
 
