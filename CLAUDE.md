@@ -28,6 +28,25 @@ must-have 尺寸的唯一來源。`lib/gap.ts` 的 `checkGap()` 吃 `SpecDimensi
 12+1 個之後這支程式碼默默過期，沒有任何機制會提醒你去改它。新功能要查
 must-have 一律 query `spec_dimensions`，不要在 TS/Python 裡建常數表。
 
+## Recipe 規則一律從 `recipe_rules` 讀，不准手改 `prompt_versions`
+
+`recipe_rules` 是 authoring surface（一條規則一列，帶 `why`／`applies_to`／
+`enforcement`）。`prompt_versions` 仍然存在，但從 v10 起是**生成物**——
+`scripts/render_recipe_version.py` 從規則列 render 出來，因為 run 必須 snapshot
+它當下拿到的文字。要改規則就改 rule row 再重新 render，**不要編輯 version row**。
+
+理由跟上面 `BANNER_MUST_HAVE` 是同一個：v1..v9 長到 ~4200 字卻只有 18 條規則，
+因為那六個散文欄位不是六種內容，是同一條規則的四個面向（陳述／怎麼做／不要做／
+怎麼檢查），所以每條被寫 3-5 次。加 v9 那一條新規則要動 10 個地方。
+
+- **`enforcement = validator:<name>` 的規則不要再寫進 prompt。** 讓 run fail 比
+  請模型遵守嚴格得多。`validators` 表登記每支的 entrypoint；沒有程式碼的一律
+  `status='declared'`，**不要為了讓 gate 全綠而加永遠 pass 的 stub**。
+- 單次 run 的 prompt 用 `scripts/resolve_prompt.py --target WxH --traits …` 依
+  aspect class 與素材 traits 篩選，不要送整份（實測 260-299 字 vs 4200 字）。
+- 產圖的一方要輸出 manifest（見 `scripts/validator_lib.py` 的 docstring），
+  `scripts/validate_all.py` 才能把 validators 當一道 gate 跑。
+
 ## 尺寸資料在哪
 
 - `db/seed_rtb_banner_native.sql`：RTB Banner（10 個 required + `960x640`
