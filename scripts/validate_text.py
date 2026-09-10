@@ -6,7 +6,7 @@ the title was being sized generously. So this checks each true-text element INDE
 separately checks that every kind=='type' layer in the source still appears in the plan.
 """
 import sys
-from validator_lib import Check, parse_args, load, h
+from validator_lib import Check, parse_args, load, h, w
 
 args = parse_args(__doc__.split("\n")[0], [(["--floor"], {"type": int, "default": 10,
                   "help": "minimum rendered text height in px (default 10)"})])
@@ -18,6 +18,12 @@ for el in m.get("elements", []):
     if el.get("role") != "text" or not el.get("placed"):
         continue
     c.checked += 1
+    p = el["placed"]
+    tw, th = m["target"]["w"], m["target"]["h"]
+    if p[0] < 0 or p[1] < 0 or p[2] > tw or p[3] > th:
+        c.fail(f"{el.get('label') or el.get('source_layer')!r} at {p} is clipped by the "
+               f"{tw}x{th} canvas — a true-text line must be wholly inside the frame; shrink "
+               f"the block or move it, never let the canvas cut it")
     ph = h(el["placed"])
     if ph < args.floor:
         c.fail(f"{el.get('source_layer')!r} renders {ph}px tall, below the {args.floor}px floor "
