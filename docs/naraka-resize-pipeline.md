@@ -206,34 +206,17 @@ Step-5-equivalent checklist. In practice this means, per output image:
 
 ---
 
-## Prompt Recipe: "Gaming — Character-Centric Key Art" (v10 — generated)
+## Prompt Recipe: "Gaming — Character-Centric Key Art" (v11 — generated)
 
-**Authoring surface: the `recipe_rules` table — one rule = one row.** `prompt_versions` v10 is
-rendered from it by `scripts/render_recipe_version.py`; do not hand-edit a version row. To change a
-rule, edit or add its row and re-render.
+**Authoring surface: the `recipe_rules` table — one rule = one row.** `prompt_versions` v11 is
+rendered from it by `scripts/render_recipe_version.py`; do not hand-edit a version row.
 
-Why this changed at v10: v1..v9 grew to ~4200 words while holding only 18 distinct rules, because
-the six prose fields are not six kinds of content — they are four *facets* of the same rule
-(statement / how-to / prohibition / check), so each rule was written 3-5 times ("aspect/distortion"
-appeared 18 times in v9, "multi-instance" 19, "bleed seam" 14). Adding v9's single new idea took 10
-separate edits and still grew the recipe 10-13%. Same 18 rules as rows: **816 words**, and a run
-only ever sees the rules that apply to its own target.
-
-Two consequences:
-
-- **10 of the 18 rules are enforced by code, not prose** (`enforcement = validator:*`). A failing
-  validator stops the run before its output can be wrong, which is stricter than asking a model to
-  comply — so those rules are not restated as instructions at all. The `validators` table registers
-  each one's entrypoint.
-- **Per-target prompts come from `scripts/resolve_prompt.py`**, which filters on the target's aspect
-  class and the asset's traits. A 320x1200 run never reads the matte text-row rule; a
-  single-character asset never reads the multi-instance rules. In practice that is **260-299 words**
-  per target instead of 4200.
-
-```bash
-python scripts/resolve_prompt.py --target 1456x180 --traits has_insets,any_fill,split_layout
-python scripts/render_recipe_version.py --insert 11     # after editing a rule row
-```
+> **v11 (2026-09-10):** adds `hero-set-gaming` — the industry rule saying what counts as hero
+> here (every character, live-action endorsers and drawn game characters alike; the in-game
+> environment is not hero). It was missing, and PR855 shows the cost: the crop was planned
+> around two endorsers, five of six outputs cut game characters, and every validator passed
+> because "what is hero" lived only in the operator's head. This belongs to the INDUSTRY layer
+> because the answer differs by industry — retail's hero is the product, delivery's is the food.
 
 ### Base Prompt (global-layer rules)
 
@@ -249,7 +232,8 @@ Rules whose enforcement is a validator are NOT restated as instructions here —
 
 ### Industry Rules (Gaming)
 
-
+[hero-set-gaming] In this industry the hero is EVERY character in the frame, real or drawn, and there is usually more than one: live-action endorsers (a celebrity actor, a director), and every game character — the central figure, the mid-ground characters, and a bottom class/roster row alike. Treat them as one hero set, not a hero plus scenery. What is NOT hero: the in-game environment (sky, terrain, architecture, effect brushwork), which is the croppable background and the source for fill regions. Where an asset has no character at all (a weapon or item-skin promo), the object takes the hero role instead. When the whole set cannot fit: reduce the COUNT of game characters (every one kept must still read as that character) before touching anything else, and never drop a live-action endorser — that is an escalation to the Designer, because endorsement credits are usually contractual.
+  Why: 2026-09-10, PR855 (a 열혈강호NEXT endorsement KV). Nothing in the recipe said what counts as hero, so the crop was planned around the two endorsers alone and the cartoon characters were treated as scenery. Five of six outputs cut game characters — one lost the entire bottom roster row — and every validator passed, because "what is hero" existed only in the operator's head. Lexie's correction: all cartoon characters and endorsers are hero. This is an industry-layer rule precisely because the answer differs by industry (a retail asset's hero is the product, a delivery asset's is the food), so it must be stated per industry rather than judged per asset.
 
 ### Layout Rules
 
@@ -280,14 +264,15 @@ Rules whose enforcement is a validator are NOT restated as instructions here —
 5. [scene-extraction-integrity] Extract the scene by hiding every element you will re-place — text, logo, badge AND hero-content insets — then calling composite() on the parent group. Never hand-pick named sub-layers and alpha_composite them yourself.
 6. [badge-corner-and-floor] The compliance/rating badge is a hard constraint, not a priority-ranked element: always visible and legible, on THIS asset's own corner (read the source layer's bbox), sized to its legibility floor and never enlarged because the canvas grew.
 7. [hero-content-insets-all] Hero-content insets — gameplay/skill-showcase thumbnails embedded in the key art — carry the same priority as the hero itself. Include all of them, sized so the content inside is recognizable, not just the badge silhouette. If one genuinely cannot be made recognizable at a target size, flag for Designer review rather than omitting or shrinking it below that.
-8. [corner-anchor-preserved] Any element whose source layer sits flush to a canvas edge stays flush to that same edge at the new size, preserving the source's own relative margin. Read the edge from this asset's layer bbox (layer_metadata's corner_anchor) — never carry over a previous asset's corner.
-9. [framing-floor] Every hero instance shows its ENTIRE identity-critical core — a character's whole head including hair ornaments, horns and crowns; an object's whole recognizable core such as a hilt or engraved mark — down through its immediate extension (chest/upper torso, or an object's near reach). Never crop tighter, and never zoom out so far it reads as tiny.
-10. [isolated-render-crosscheck] Any isolated layer render whose exact appearance matters must be compared side by side with the same bbox cropped from the full flattened composite before it is trusted. Sample actual pixel values before concluding anything about a backing plate's colour.
-11. [multi-instance-joint-constraint] When more than one hero instance shares one crop, their framing is a joint constraint: after any crop shift, re-check EVERY instance's core boundary at that exact position, not just the one being optimized. Iterate toward a value that satisfies all of them.
-12. [no-dilated-shadow-on-fine-detail] Never apply a dilated/expanded contact shadow to fine line-art or a small multi-character icon row (fine_detail_ratio below ~0.3) — the dilation bridges the gaps between strokes and reads as blur. Shape-hugging shadows are for thick strokes only.
-13. [per-instance-label-adjacency] A per-instance label (nameplate, name banner) stays visually beside its own instance wherever that instance appears — never pooled into a shared text zone with another instance's label.
-14. [portrait-center-body-mass] For a portrait/vertical target, centre the crop on the hero's solid body mass (torso/core midline), not the bounding box of everything attached to it. Let asymmetric extensions — flowing hair, a trailing sash, an outstretched weapon — fall unevenly.
-15. [text-legibility-floor] Check EVERY true-text layer (psd-tools kind=='type') independently against human legibility at the output's actual pixel size, and keep every line the source has — if the block does not fit, shrink it as one unit rather than dropping a line.
-16. [text-row-not-stack] On a matte (short-wide) target, arrange true text as a horizontal row spreading toward the hero, not stacked vertically against one edge. A brand logo may stay in a top-corner brand-mark position outside the row.
-17. [zero-overlap-tiers] No text or icon element overlaps the hero or a hero-content inset, verified at the EXACT final position and size, at true output pixel scale. Acceptable-overlap tiers: background/environment fine; thin flowing material (hair strands, hems) fine where the source design already does it; solid hero mass (skin, face, armour, an object's solid body) never.
-18. [zone-height-from-floors] Size a hero/element zone split from what the elements actually need at their legibility floors — text height + one element row + padding — never from a fraction of the canvas.
+8. [hero-set-gaming] In this industry the hero is EVERY character in the frame, real or drawn, and there is usually more than one: live-action endorsers (a celebrity actor, a director), and every game character — the central figure, the mid-ground characters, and a bottom class/roster row alike. Treat them as one hero set, not a hero plus scenery. What is NOT hero: the in-game environment (sky, terrain, architecture, effect brushwork), which is the croppable background and the source for fill regions. Where an asset has no character at all (a weapon or item-skin promo), the object takes the hero role instead. When the whole set cannot fit: reduce the COUNT of game characters (every one kept must still read as that character) before touching anything else, and never drop a live-action endorser — that is an escalation to the Designer, because endorsement credits are usually contractual.
+9. [corner-anchor-preserved] Any element whose source layer sits flush to a canvas edge stays flush to that same edge at the new size, preserving the source's own relative margin. Read the edge from this asset's layer bbox (layer_metadata's corner_anchor) — never carry over a previous asset's corner.
+10. [framing-floor] Every hero instance shows its ENTIRE identity-critical core — a character's whole head including hair ornaments, horns and crowns; an object's whole recognizable core such as a hilt or engraved mark — down through its immediate extension (chest/upper torso, or an object's near reach). Never crop tighter, and never zoom out so far it reads as tiny.
+11. [isolated-render-crosscheck] Any isolated layer render whose exact appearance matters must be compared side by side with the same bbox cropped from the full flattened composite before it is trusted. Sample actual pixel values before concluding anything about a backing plate's colour.
+12. [multi-instance-joint-constraint] When more than one hero instance shares one crop, their framing is a joint constraint: after any crop shift, re-check EVERY instance's core boundary at that exact position, not just the one being optimized. Iterate toward a value that satisfies all of them.
+13. [no-dilated-shadow-on-fine-detail] Never apply a dilated/expanded contact shadow to fine line-art or a small multi-character icon row (fine_detail_ratio below ~0.3) — the dilation bridges the gaps between strokes and reads as blur. Shape-hugging shadows are for thick strokes only.
+14. [per-instance-label-adjacency] A per-instance label (nameplate, name banner) stays visually beside its own instance wherever that instance appears — never pooled into a shared text zone with another instance's label.
+15. [portrait-center-body-mass] For a portrait/vertical target, centre the crop on the hero's solid body mass (torso/core midline), not the bounding box of everything attached to it. Let asymmetric extensions — flowing hair, a trailing sash, an outstretched weapon — fall unevenly.
+16. [text-legibility-floor] Check EVERY true-text layer (psd-tools kind=='type') independently against human legibility at the output's actual pixel size, and keep every line the source has — if the block does not fit, shrink it as one unit rather than dropping a line.
+17. [text-row-not-stack] On a matte (short-wide) target, arrange true text as a horizontal row spreading toward the hero, not stacked vertically against one edge. A brand logo may stay in a top-corner brand-mark position outside the row.
+18. [zero-overlap-tiers] No text or icon element overlaps the hero or a hero-content inset, verified at the EXACT final position and size, at true output pixel scale. Acceptable-overlap tiers: background/environment fine; thin flowing material (hair strands, hems) fine where the source design already does it; solid hero mass (skin, face, armour, an object's solid body) never.
+19. [zone-height-from-floors] Size a hero/element zone split from what the elements actually need at their legibility floors — text height + one element row + padding — never from a fraction of the canvas.
