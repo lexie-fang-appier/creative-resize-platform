@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { listGenerationTargets } from "@/lib/specs";
 import { requireSessionEmail } from "@/lib/require-session";
 import { logGenerationRun } from "@/lib/sheets-log";
-import { NARAKA_SOURCES } from "@/lib/creative-analysis";
+import { EXAMPLE_SOURCES } from "@/lib/creative-analysis";
 import { getAsset } from "@/lib/assets";
 import { getJob } from "@/lib/jobs";
 
@@ -36,7 +36,7 @@ export async function POST(request: Request) {
     const [job, asset] = await Promise.all([getJob(body.jobId), getAsset(body.assetId)]);
     if (!job || !asset || asset.jobId !== job.id) return NextResponse.json({ error: "Drive source was not found." }, { status: 404 });
     sourceAsset = asset.filename;
-  } else if (!sourceAsset || !(sourceAsset in NARAKA_SOURCES)) {
+  } else if (!sourceAsset || !(sourceAsset in EXAMPLE_SOURCES)) {
     return NextResponse.json({ error: "Invalid source asset." }, { status: 400 });
   }
   if (body.decision !== "complete" && (!body.targetId || !(await listGenerationTargets()).some((target) => target.id === body.targetId))) return NextResponse.json({ error: "Invalid target size." }, { status: 400 });

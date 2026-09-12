@@ -33,6 +33,11 @@ venv/
 # Experiment scratch renders (real client derivatives, same reason as /outputs/).
 /output/
 
+# Transparent layers extracted from a real client's PSD, one directory per
+# source. The confirmed layer MAPS in db/layer-maps/ are tracked; the pixels
+# they point at are not.
+/public/layer-assets/
+
 # Real client source art and the transparent layers extracted from it. Code that
 # reads these paths is tracked; the pixels are not — same stance as 0ca46c8,
 # which removed committed screenshots showing real client names. Fetch the

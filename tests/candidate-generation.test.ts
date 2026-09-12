@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { createLabelSnapshotHash, planApiCanvas, planFinalCrop, resolveLayoutFamily, resolvePromptRules, validateGenerationFeasibility } from "../lib/naraka-generation";
+import { createLabelSnapshotHash, planApiCanvas, planFinalCrop, resolveLayoutFamily, resolvePromptRules, validateGenerationFeasibility } from "../lib/candidate-generation";
 import { readFileSync } from "node:fs";
 import type { GenerationRule } from "../lib/recipe-rules";
 import type { GenerationTarget } from "../lib/specs";
@@ -30,7 +30,7 @@ const target = (id: string): GenerationTarget => {
 };
 
 
-describe("NARAKA Image API canvas planning", () => {
+describe("Image API canvas planning", () => {
   it("maps an extreme target to the Image API supported 3:1 boundary", () => {
     expect(planApiCanvas(1456, 180)).toEqual({ width: 2880, height: 960, size: "2880x960", requiresCrop: true });
   });

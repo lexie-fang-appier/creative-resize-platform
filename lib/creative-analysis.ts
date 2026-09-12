@@ -2,17 +2,23 @@ import { createHash, randomUUID } from "node:crypto";
 import fs from "node:fs/promises";
 import path from "node:path";
 
+/** Generated candidates and analysis caches. Named for what it holds, not for
+ * the campaign the pipeline was first built against. */
+export const OUTPUT_DIR = ["outputs", "candidates"] as const;
+
 export const OBJECT_ANALYSIS_PROMPT_VERSION = "object-detect-v3";
 export const DEFAULT_VISION_MODEL = "gpt-6-astra";
 
-export const NARAKA_SOURCES = {
+/** Local sample assets the Workspace can run without a Drive job. Not a product
+ * surface — a Drive source arrives as bytes and needs no entry here. */
+export const EXAMPLE_SOURCES = {
   YJp810: { filename: "YJp810-1080x1350.png", width: 1080, height: 1350 },
   YJp812: { filename: "YJp812-1200x627.png", width: 1200, height: 627 },
   YJp813: { filename: "YJp813-1200x627.png", width: 1200, height: 627 },
   YJp814: { filename: "YJp814-1920x1080.png", width: 1920, height: 1080 },
 } as const;
 
-export type NarakaSourceId = keyof typeof NARAKA_SOURCES;
+export type ExampleSourceId = keyof typeof EXAMPLE_SOURCES;
 
 export type DetectedCreativeObject = {
   z: number;
@@ -87,11 +93,11 @@ function configuredApiKey(): string {
   return key;
 }
 
-export function sourcePath(sourceAsset: NarakaSourceId): string {
-  return path.join(process.cwd(), "public", "examples", "naraka", NARAKA_SOURCES[sourceAsset].filename);
+export function sourcePath(sourceAsset: ExampleSourceId): string {
+  return path.join(process.cwd(), "public", "examples", "naraka", EXAMPLE_SOURCES[sourceAsset].filename);
 }
 
-export async function analyzeCreative(sourceAsset: NarakaSourceId): Promise<CreativeAnalysisResult> {
+export async function analyzeCreative(sourceAsset: ExampleSourceId): Promise<CreativeAnalysisResult> {
   const image = await fs.readFile(sourcePath(sourceAsset));
   return analyzeCreativeImage(sourceAsset, image);
 }
@@ -100,7 +106,7 @@ export async function analyzeCreativeImage(sourceAsset: string, image: Buffer): 
   const started = Date.now();
   const model = process.env.OPENAI_VISION_MODEL?.trim() || DEFAULT_VISION_MODEL;
   const cacheKey = createHash("sha256").update(image).update(model).update(OBJECT_ANALYSIS_PROMPT_VERSION).digest("hex");
-  const cachePath = path.join(process.cwd(), "outputs", "naraka-mvp", `analysis-${cacheKey}.json`);
+  const cachePath = path.join(process.cwd(), ...OUTPUT_DIR, `analysis-${cacheKey}.json`);
   try {
     const cached = JSON.parse(await fs.readFile(cachePath, "utf8")) as CreativeAnalysisResult;
     return { ...cached, cached: true, processingTimeMs: Date.now() - started };

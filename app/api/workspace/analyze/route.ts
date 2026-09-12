@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { analyzeCreative, analyzeCreativeImage, NARAKA_SOURCES, type NarakaSourceId } from "@/lib/creative-analysis";
+import { analyzeCreative, analyzeCreativeImage, EXAMPLE_SOURCES, type ExampleSourceId } from "@/lib/creative-analysis";
 import { getAsset } from "@/lib/assets";
 import { getAssetPreview } from "@/lib/asset-preview";
 import { getJob } from "@/lib/jobs";
@@ -23,8 +23,8 @@ export async function POST(request: Request) {
       const preview = await getAssetPreview(asset);
       if (!preview.ok) return NextResponse.json({ error: preview.reason }, { status: 422 });
       result = await analyzeCreativeImage(asset.filename, preview.buffer);
-    } else if (body.sourceAsset && body.sourceAsset in NARAKA_SOURCES) {
-      result = await analyzeCreative(body.sourceAsset as NarakaSourceId);
+    } else if (body.sourceAsset && body.sourceAsset in EXAMPLE_SOURCES) {
+      result = await analyzeCreative(body.sourceAsset as ExampleSourceId);
     } else {
       return NextResponse.json({ error: "Invalid source asset." }, { status: 400 });
     }

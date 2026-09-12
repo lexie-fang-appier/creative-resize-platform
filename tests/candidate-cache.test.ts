@@ -27,9 +27,15 @@ vi.mock("../lib/recipe-rules", async (importOriginal) => ({
   ],
 }));
 
-const { generateNarakaCandidates } = await import("../lib/naraka-generation");
+const { generateCandidates } = await import("../lib/candidate-generation");
 
 const TARGET_500 = { id: "500x500", width: 500, height: 500, placement: "Banner", deviceScope: "mobile_only", mustHaveLevel: "required" };
+
+const RECIPE = {
+  recipeId: null, recipeName: "General — Cross-Industry Baseline", versionId: "general-builtin-v1",
+  persistedVersionId: null, basePrompt: "Recompose.", industryRules: null, layoutRules: null,
+  requiredElements: [], forbiddenChanges: [], resolution: "general_builtin" as const,
+};
 
 const LABELS = [
   { name: "Character", machineLabel: "Hero", finalLabel: "Hero", decision: "confirmed", importance: "required" as const },
@@ -53,7 +59,7 @@ describe("cache hits never reach the paid API", () => {
   });
 
   it("serves the cached candidate without calling the image API", async () => {
-    const result = await generateNarakaCandidates(LABELS, [TARGET_500], "designer@appier.com", "YJp814");
+    const result = await generateCandidates({ labels: LABELS, targets: [TARGET_500], actor: "designer@appier.com", sourceAsset: "YJp814", source: Buffer.from("src"), recipe: RECIPE });
 
     expect(result.candidates).toHaveLength(1);
     expect(result.candidates[0].status).toBe("cache_hit");
@@ -66,7 +72,7 @@ describe("cache hits never reach the paid API", () => {
     // this throw was read as a cache MISS and the run paid for the image again.
     mocks.logGenerationRun.mockRejectedValue(new Error("Google Sheet logging is required but not configured."));
 
-    await expect(generateNarakaCandidates(LABELS, [TARGET_500], "designer@appier.com", "YJp814")).rejects.toThrow(/required but not configured/);
+    await expect(generateCandidates({ labels: LABELS, targets: [TARGET_500], actor: "designer@appier.com", sourceAsset: "YJp814", source: Buffer.from("src"), recipe: RECIPE })).rejects.toThrow(/required but not configured/);
     expect(fetchSpy).not.toHaveBeenCalled();
   });
 });
@@ -88,7 +94,7 @@ describe("a broken audit trail is an error, not a worse image", () => {
     // with a deterministic fallback — the audit silently downgrading the output.
     mocks.logGenerationRun.mockRejectedValue(new Error("Google Sheet logging is required but not configured."));
 
-    await expect(generateNarakaCandidates(LABELS, [TARGET_500], "designer@appier.com", "YJp814")).rejects.toThrow(/required but not configured/);
+    await expect(generateCandidates({ labels: LABELS, targets: [TARGET_500], actor: "designer@appier.com", sourceAsset: "YJp814", source: Buffer.from("src"), recipe: RECIPE })).rejects.toThrow(/required but not configured/);
     expect(fetchSpy).not.toHaveBeenCalled();
   });
 });

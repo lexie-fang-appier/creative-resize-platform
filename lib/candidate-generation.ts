@@ -4,7 +4,7 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import { promisify } from "node:util";
 import { logGenerationRun } from "./sheets-log";
-import { NARAKA_SOURCES, sourcePath, type NarakaSourceId } from "./creative-analysis";
+import { OUTPUT_DIR } from "./creative-analysis";
 import type { RecipeMatch } from "./generation";
 import { GLOBAL_SAFETY_RULES } from "./prompts";
 import type { GenerationTarget } from "./specs";
@@ -13,14 +13,10 @@ import { buildExtremeBackgroundPrompt, buildWideBasePrompt, composeExtremeLayout
 
 const execFileAsync = promisify(execFile);
 
-// v14: rule text and applicability moved to recipe_rules, and the resolved list
-// is now sorted by (layer, slug) instead of assembled in if/else order. Same
-// rules, different byte order, so the bump invalidates the v13 cache honestly.
-export const NARAKA_PROMPT_VERSION = "naraka-resolved-v14";
 export const DEFAULT_IMAGE_MODEL = "gpt-image-2.5-sunburst";
 // Names the pipeline the cache key stands for. It used to say contain-edge-align,
 // a mode nothing passes any more, so a key could not be read back to what made it.
-const FINALIZATION_VERSION = "centre-crop-v3";
+export const FINALIZATION_VERSION = "centre-crop-v3";
 
 export type LayoutFamily = "ultra_landscape" | "landscape" | "standard" | "portrait" | "ultra_portrait";
 export type ImageQuality = "low" | "medium" | "high" | "xhigh" | "max";
@@ -84,7 +80,7 @@ export interface GenerationCandidate {
   requestId: string | null;
 }
 
-export interface NarakaGenerationResult {
+export interface GenerationResult {
   runId: string;
   mode: "openai" | "deterministic_fallback" | "mixed" | "cache" | "pass_to_designer";
   candidates: GenerationCandidate[];
@@ -193,7 +189,7 @@ export function resolvePromptRules(rules: GenerationRule[], target: GenerationTa
   });
 }
 
-function buildPrompt(rules: GenerationRule[], sourceAsset: string, target: GenerationTarget, labels: ConfirmedLayerLabel[], apiCanvas: ReturnType<typeof planApiCanvas>): { prompt: string; resolvedRules: GenerationRule[] } {
+function buildPrompt(rules: GenerationRule[], sourceAsset: string, target: GenerationTarget, labels: ConfirmedLayerLabel[], apiCanvas: ReturnType<typeof planApiCanvas>, recipe: RecipeMatch): { prompt: string; resolvedRules: GenerationRule[] } {
   const layoutFamily = resolveLayoutFamily(target.width, target.height);
   const suggestedTextRatio = layoutFamily === "landscape" && target.width / target.height > 3 ? suggestWideTextRatio(target.width, target.height) : null;
   const crop = planFinalCrop(target.width, target.height, apiCanvas);
@@ -201,6 +197,11 @@ function buildPrompt(rules: GenerationRule[], sourceAsset: string, target: Gener
   const inventory = labels.filter((layer) => layer.finalLabel !== "Ignore").map((layer) => `${layer.name}: ${layer.finalLabel}${layer.importance ? ` (${layer.importance}, ${layer.resizeBehavior ?? "preserve"})` : ""}`).join("; ");
   const prompt = [
     `Edit the supplied ${sourceAsset} key art into one production advertising candidate.`,
+    `Prompt recipe: ${recipe.recipeName} (${recipe.versionId}).`,
+    `Global safety rules: ${GLOBAL_SAFETY_RULES}`,
+    ...(recipe.industryRules ? [`Industry rules: ${recipe.industryRules}`] : []),
+    ...(recipe.layoutRules ? [`Layout rules: ${recipe.layoutRules}`] : []),
+    `Base prompt: ${recipe.basePrompt}`,
     `Confirmed layer inventory: ${inventory}.`,
     `Layout family: ${layoutFamily}. Compose for final target ${target.width}x${target.height} on API working canvas ${apiCanvas.size}.`,
     ...(suggestedTextRatio === null ? [] : [`Typography recommendation: target Headline height ${Math.round(suggestedTextRatio * 100)}% of the final canvas height. Scale Headline, supporting copy, and CTA uniformly from their original PSD layers; treat this as a recommendation bounded by safe-zone fit, not a fixed per-size constant.`]),
@@ -238,7 +239,7 @@ async function callImageEdit(params: { source: Buffer; prompt: string; size: str
 
   const form = new FormData();
   form.set("model", params.model);
-  form.set("image[]", new Blob([new Uint8Array(params.source)], { type: "image/png" }), "naraka-source.png");
+  form.set("image[]", new Blob([new Uint8Array(params.source)], { type: "image/png" }), "source.png");
   form.set("prompt", params.prompt);
   form.set("size", params.size);
   form.set("quality", params.quality);
@@ -288,11 +289,29 @@ function safeError(err: unknown): { code: string; message: string; requestId: st
   return { code: "generation_error", message: String(err).slice(0, 500), requestId: null };
 }
 
-export async function generateNarakaCandidates(labels: ConfirmedLayerLabel[], targets: GenerationTarget[], actor: string, sourceAsset: NarakaSourceId = "YJp813"): Promise<NarakaGenerationResult> {
+export interface CandidateRequest {
+  labels: ConfirmedLayerLabel[];
+  targets: GenerationTarget[];
+  actor: string;
+  /** The source's own name: a Drive filename, or a local example id. It keys the
+   * layer-asset directory and appears in prompts and audit rows. */
+  sourceAsset: string;
+  source: Buffer;
+  recipe: RecipeMatch;
+  /** Required before a client's file leaves for a third party. Local example
+   * sources are already on this machine and do not need it. */
+  externalProcessingConsent?: true;
+}
+
+/** One path for every source. A Drive upload and a local example differ only in
+ * where the bytes came from, so they no longer differ in what happens to them:
+ * both resolve the same recipe, both can reach the layer compositor when the
+ * source has a confirmed manifest, and both stamp the recipe version rather than
+ * a hand-bumped constant. */
+export async function generateCandidates({ labels, targets, actor, sourceAsset, source, recipe }: CandidateRequest): Promise<GenerationResult> {
   const runId = randomUUID();
-  if (!(sourceAsset in NARAKA_SOURCES)) throw new Error("Unsupported NARAKA source asset.");
   const rules = await loadGenerationRules();
-  const source = await fs.readFile(sourcePath(sourceAsset));
+  const promptVersion = recipe.versionId;
   const sourceHash = createHash("sha256").update(source).digest("hex");
   const labelSnapshotHash = createLabelSnapshotHash(labels);
   const requestedModel = process.env.OPENAI_IMAGE_MODEL?.trim() || DEFAULT_IMAGE_MODEL;
@@ -315,7 +334,7 @@ export async function generateNarakaCandidates(labels: ConfirmedLayerLabel[], ta
     const preflight = validateGenerationFeasibility(target, labels);
     if (preflight.status === "pass_to_designer") {
       blocked.push({ id: targetId, ...preflight });
-      await logGenerationRun({ timestamp: new Date().toISOString(), runId, sourceAsset, targetSize: targetId, phase: "preflight", status: "pass_to_designer", model: "not_called", quality, promptVersion: NARAKA_PROMPT_VERSION, cacheKey: "not_created", requestId: null, processingTimeMs: Date.now() - started, apiCostUsd: 0, outputUri: null, errorCode: preflight.ruleCodes.join(","), errorMessage: preflight.reasons.join(" "), actor, labelSnapshotHash, usageJson: null });
+      await logGenerationRun({ timestamp: new Date().toISOString(), runId, sourceAsset, targetSize: targetId, phase: "preflight", status: "pass_to_designer", model: "not_called", quality, promptVersion, cacheKey: "not_created", requestId: null, processingTimeMs: Date.now() - started, apiCostUsd: 0, outputUri: null, errorCode: preflight.ruleCodes.join(","), errorMessage: preflight.reasons.join(" "), actor, labelSnapshotHash, usageJson: null });
       continue;
     }
     const extremeManifest = useExtremeCompositor || useWideProtectedOverlay ? await loadExtremeLayerManifest(sourceAsset) : null;
@@ -326,7 +345,7 @@ export async function generateNarakaCandidates(labels: ConfirmedLayerLabel[], ta
         ? [`${sourceAsset} does not have an extracted transparent-layer manifest for extreme-ratio composition.`]
         : [`Extreme-ratio composition requires approved transparent assets for: ${missingRoles.join(", ")}.`];
       blocked.push({ id: targetId, status: "pass_to_designer", ruleCodes, reasons });
-      await logGenerationRun({ timestamp: new Date().toISOString(), runId, sourceAsset, targetSize: targetId, phase: "preflight", status: "pass_to_designer", model: "not_called", quality, promptVersion: NARAKA_PROMPT_VERSION, cacheKey: "not_created", requestId: null, processingTimeMs: Date.now() - started, apiCostUsd: 0, outputUri: null, errorCode: ruleCodes.join(","), errorMessage: reasons.join(" "), actor, labelSnapshotHash, usageJson: null });
+      await logGenerationRun({ timestamp: new Date().toISOString(), runId, sourceAsset, targetSize: targetId, phase: "preflight", status: "pass_to_designer", model: "not_called", quality, promptVersion, cacheKey: "not_created", requestId: null, processingTimeMs: Date.now() - started, apiCostUsd: 0, outputUri: null, errorCode: ruleCodes.join(","), errorMessage: reasons.join(" "), actor, labelSnapshotHash, usageJson: null });
       continue;
     }
     // A required layer the target's layout has no zone for is a loss, not a
@@ -339,7 +358,7 @@ export async function generateNarakaCandidates(labels: ConfirmedLayerLabel[], ta
         const ruleCodes = ["required_role_has_no_layout_zone"];
         const reasons = [`The ${compositorFamily} layout has no zone for required ${unplaceable.join(", ")}; this target cannot be composed without dropping it.`];
         blocked.push({ id: targetId, status: "pass_to_designer", ruleCodes, reasons });
-        await logGenerationRun({ timestamp: new Date().toISOString(), runId, sourceAsset, targetSize: targetId, phase: "preflight", status: "pass_to_designer", model: "not_called", quality, promptVersion: NARAKA_PROMPT_VERSION, cacheKey: "not_created", requestId: null, processingTimeMs: Date.now() - started, apiCostUsd: 0, outputUri: null, errorCode: ruleCodes.join(","), errorMessage: reasons.join(" "), actor, labelSnapshotHash, usageJson: null });
+        await logGenerationRun({ timestamp: new Date().toISOString(), runId, sourceAsset, targetSize: targetId, phase: "preflight", status: "pass_to_designer", model: "not_called", quality, promptVersion, cacheKey: "not_created", requestId: null, processingTimeMs: Date.now() - started, apiCostUsd: 0, outputUri: null, errorCode: ruleCodes.join(","), errorMessage: reasons.join(" "), actor, labelSnapshotHash, usageJson: null });
         continue;
       }
     }
@@ -350,29 +369,29 @@ export async function generateNarakaCandidates(labels: ConfirmedLayerLabel[], ta
         ? [`${sourceAsset} does not have a protected PSD-layer manifest for wide-banner composition.`]
         : [`Wide-banner composition requires approved original layers for: ${missingWideRoles.join(", ")}.`];
       blocked.push({ id: targetId, status: "pass_to_designer", ruleCodes, reasons });
-      await logGenerationRun({ timestamp: new Date().toISOString(), runId, sourceAsset, targetSize: targetId, phase: "preflight", status: "pass_to_designer", model: "not_called", quality, promptVersion: NARAKA_PROMPT_VERSION, cacheKey: "not_created", requestId: null, processingTimeMs: Date.now() - started, apiCostUsd: 0, outputUri: null, errorCode: ruleCodes.join(","), errorMessage: reasons.join(" "), actor, labelSnapshotHash, usageJson: null });
+      await logGenerationRun({ timestamp: new Date().toISOString(), runId, sourceAsset, targetSize: targetId, phase: "preflight", status: "pass_to_designer", model: "not_called", quality, promptVersion, cacheKey: "not_created", requestId: null, processingTimeMs: Date.now() - started, apiCostUsd: 0, outputUri: null, errorCode: ruleCodes.join(","), errorMessage: reasons.join(" "), actor, labelSnapshotHash, usageJson: null });
       continue;
     }
     const apiCanvas = planApiCanvas(target.width, target.height);
-    const resolved = buildPrompt(rules, sourceAsset, target, labels, apiCanvas);
+    const resolved = buildPrompt(rules, sourceAsset, target, labels, apiCanvas, recipe);
     const resolvedRules = resolved.resolvedRules.map(toResolvedRule);
     const prompt = preflight.status === "ready_with_warnings"
       ? `${resolved.prompt}\n\n[preflight-review-warning] Attempt a candidate for human evaluation. Do not omit, crop, obstruct, or distort required objects to make the composition fit. Known risks: ${preflight.reasons.join(" ")}`
       : resolved.prompt;
     const apiPrompt = useWideProtectedOverlay ? buildWideBasePrompt(sourceAsset, extremeManifest ?? undefined) : extremeFamily ? buildExtremeBackgroundPrompt(sourceAsset, extremeFamily) : prompt;
     const pipelineVersion = useWideProtectedOverlay ? WIDE_OVERLAY_VERSION : extremeFamily ? EXTREME_COMPOSITOR_VERSION : FINALIZATION_VERSION;
-    const cacheKey = createHash("sha256").update([sourceHash, labelSnapshotHash, targetId, apiCanvas.size, finalizationMode, pipelineVersion, model, quality, NARAKA_PROMPT_VERSION].join("|")).digest("hex");
+    const cacheKey = createHash("sha256").update([sourceHash, labelSnapshotHash, targetId, apiCanvas.size, finalizationMode, pipelineVersion, model, quality, promptVersion].join("|")).digest("hex");
     const filename = `${cacheKey}-${targetId}.png`;
-    const outputPath = path.join(process.cwd(), "outputs", "naraka-mvp", filename);
+    const outputPath = path.join(process.cwd(), ...OUTPUT_DIR, filename);
     const outputUri = `/api/workspace/outputs/${filename}`;
     const fallbackFilename = `fallback-${sourceHash.slice(0, 16)}-${targetId}.png`;
-    const fallbackOutputPath = path.join(process.cwd(), "outputs", "naraka-mvp", fallbackFilename);
+    const fallbackOutputPath = path.join(process.cwd(), ...OUTPUT_DIR, fallbackFilename);
     const fallbackOutputUri = `/api/workspace/outputs/${fallbackFilename}`;
 
     // A cache miss is expected and is not logged as an error.
     if (await fileExists(outputPath)) {
-      candidates.push({ id: targetId, src: outputUri, status: "cache_hit", model, quality, promptVersion: NARAKA_PROMPT_VERSION, prompt, resolvedRules, preflightWarnings: preflight.reasons, suggestedTextRatio, requestId: null });
-      await logGenerationRun({ timestamp: new Date().toISOString(), runId, sourceAsset, targetSize: targetId, phase: "generation", status: "cache_hit", model, quality, promptVersion: NARAKA_PROMPT_VERSION, cacheKey, requestId: null, processingTimeMs: Date.now() - started, apiCostUsd: null, outputUri, errorCode: null, errorMessage: null, actor, labelSnapshotHash, usageJson: null });
+      candidates.push({ id: targetId, src: outputUri, status: "cache_hit", model, quality, promptVersion, prompt, resolvedRules, preflightWarnings: preflight.reasons, suggestedTextRatio, requestId: null });
+      await logGenerationRun({ timestamp: new Date().toISOString(), runId, sourceAsset, targetSize: targetId, phase: "generation", status: "cache_hit", model, quality, promptVersion, cacheKey, requestId: null, processingTimeMs: Date.now() - started, apiCostUsd: null, outputUri, errorCode: null, errorMessage: null, actor, labelSnapshotHash, usageJson: null });
       continue;
     }
 
@@ -380,7 +399,7 @@ export async function generateNarakaCandidates(labels: ConfirmedLayerLabel[], ta
     // unconfigured, and inside, that throw would be caught as a failed
     // generation and answered with a fallback candidate — a broken audit trail
     // quietly turning into a worse image instead of an error.
-    await logGenerationRun({ timestamp: new Date().toISOString(), runId, sourceAsset, targetSize: targetId, phase: "generation", status: "generation_started", model, quality, promptVersion: NARAKA_PROMPT_VERSION, cacheKey, requestId: null, processingTimeMs: 0, apiCostUsd: null, outputUri: null, errorCode: null, errorMessage: null, actor, labelSnapshotHash, usageJson: null });
+    await logGenerationRun({ timestamp: new Date().toISOString(), runId, sourceAsset, targetSize: targetId, phase: "generation", status: "generation_started", model, quality, promptVersion, cacheKey, requestId: null, processingTimeMs: 0, apiCostUsd: null, outputUri: null, errorCode: null, errorMessage: null, actor, labelSnapshotHash, usageJson: null });
 
     try {
       const result = await callImageEdit({ source, prompt: apiPrompt, size: apiCanvas.size, model, quality });
@@ -403,15 +422,15 @@ export async function generateNarakaCandidates(labels: ConfirmedLayerLabel[], ta
       } else {
         await finalizeImage(result.image, outputPath, target.width, target.height, finalizationMode);
       }
-      candidates.push({ id: targetId, src: outputUri, status: "in_review", model, quality, promptVersion: NARAKA_PROMPT_VERSION, prompt, resolvedRules, preflightWarnings: preflight.reasons, suggestedTextRatio, requestId: result.requestId });
-      await logGenerationRun({ timestamp: new Date().toISOString(), runId, sourceAsset, targetSize: targetId, phase: "generation", status: "in_review", model, quality, promptVersion: NARAKA_PROMPT_VERSION, cacheKey, requestId: result.requestId, processingTimeMs: Date.now() - started, apiCostUsd: null, outputUri, errorCode: null, errorMessage: null, actor, labelSnapshotHash, usageJson: result.usage ? JSON.stringify(result.usage) : null });
+      candidates.push({ id: targetId, src: outputUri, status: "in_review", model, quality, promptVersion, prompt, resolvedRules, preflightWarnings: preflight.reasons, suggestedTextRatio, requestId: result.requestId });
+      await logGenerationRun({ timestamp: new Date().toISOString(), runId, sourceAsset, targetSize: targetId, phase: "generation", status: "in_review", model, quality, promptVersion, cacheKey, requestId: result.requestId, processingTimeMs: Date.now() - started, apiCostUsd: null, outputUri, errorCode: null, errorMessage: null, actor, labelSnapshotHash, usageJson: result.usage ? JSON.stringify(result.usage) : null });
     } catch (err) {
       const failure = safeError(err);
       if (useExtremeCompositor || useWideProtectedOverlay) {
         const ruleCodes = [useWideProtectedOverlay ? "wide_protected_overlay_failed" : "extreme_compositor_failed"];
         const reasons = [`Scene generation or deterministic protected-layer composition failed: ${failure.message}`];
         blocked.push({ id: targetId, status: "pass_to_designer", ruleCodes, reasons });
-        await logGenerationRun({ timestamp: new Date().toISOString(), runId, sourceAsset, targetSize: targetId, phase: "generation", status: "pass_to_designer", model, quality, promptVersion: NARAKA_PROMPT_VERSION, cacheKey, requestId: failure.requestId, processingTimeMs: Date.now() - started, apiCostUsd: null, outputUri: null, errorCode: failure.code, errorMessage: failure.message, actor, labelSnapshotHash, usageJson: null });
+        await logGenerationRun({ timestamp: new Date().toISOString(), runId, sourceAsset, targetSize: targetId, phase: "generation", status: "pass_to_designer", model, quality, promptVersion, cacheKey, requestId: failure.requestId, processingTimeMs: Date.now() - started, apiCostUsd: null, outputUri: null, errorCode: failure.code, errorMessage: failure.message, actor, labelSnapshotHash, usageJson: null });
         continue;
       }
       errors.push(`${targetId}: ${failure.code}`);
@@ -425,11 +444,11 @@ export async function generateNarakaCandidates(labels: ConfirmedLayerLabel[], ta
         const ruleCodes = ["fallback_render_failed"];
         const reasons = [`The image API failed (${failure.code}) and the deterministic fallback could not be rendered either: ${fallbackFailure.message}`];
         blocked.push({ id: targetId, status: "pass_to_designer", ruleCodes, reasons });
-        await logGenerationRun({ timestamp: new Date().toISOString(), runId, sourceAsset, targetSize: targetId, phase: "generation", status: "pass_to_designer", model, quality, promptVersion: NARAKA_PROMPT_VERSION, cacheKey, requestId: failure.requestId, processingTimeMs: Date.now() - started, apiCostUsd: null, outputUri: null, errorCode: ruleCodes[0], errorMessage: reasons[0], actor, labelSnapshotHash, usageJson: null });
+        await logGenerationRun({ timestamp: new Date().toISOString(), runId, sourceAsset, targetSize: targetId, phase: "generation", status: "pass_to_designer", model, quality, promptVersion, cacheKey, requestId: failure.requestId, processingTimeMs: Date.now() - started, apiCostUsd: null, outputUri: null, errorCode: ruleCodes[0], errorMessage: reasons[0], actor, labelSnapshotHash, usageJson: null });
         continue;
       }
-      candidates.push({ id: targetId, src: fallbackOutputUri, status: "deterministic_fallback", model, quality, promptVersion: NARAKA_PROMPT_VERSION, prompt, resolvedRules, preflightWarnings: preflight.reasons, suggestedTextRatio, requestId: failure.requestId });
-      await logGenerationRun({ timestamp: new Date().toISOString(), runId, sourceAsset, targetSize: targetId, phase: "generation", status: "deterministic_fallback", model, quality, promptVersion: NARAKA_PROMPT_VERSION, cacheKey, requestId: failure.requestId, processingTimeMs: Date.now() - started, apiCostUsd: null, outputUri: fallbackOutputUri, errorCode: failure.code, errorMessage: failure.message, actor, labelSnapshotHash, usageJson: null });
+      candidates.push({ id: targetId, src: fallbackOutputUri, status: "deterministic_fallback", model, quality, promptVersion, prompt, resolvedRules, preflightWarnings: preflight.reasons, suggestedTextRatio, requestId: failure.requestId });
+      await logGenerationRun({ timestamp: new Date().toISOString(), runId, sourceAsset, targetSize: targetId, phase: "generation", status: "deterministic_fallback", model, quality, promptVersion, cacheKey, requestId: failure.requestId, processingTimeMs: Date.now() - started, apiCostUsd: null, outputUri: fallbackOutputUri, errorCode: failure.code, errorMessage: failure.message, actor, labelSnapshotHash, usageJson: null });
     }
   }
 
@@ -438,79 +457,4 @@ export async function generateNarakaCandidates(labels: ConfirmedLayerLabel[], ta
   const cacheCount = candidates.filter((candidate) => candidate.status === "cache_hit").length;
   const mode = fallbackCount === candidates.length ? "deterministic_fallback" : cacheCount === candidates.length ? "cache" : fallbackCount > 0 ? "mixed" : "openai";
   return { runId, mode, candidates, blocked, warning: errors.length ? `API fallback used (${errors.join(", ")}).` : null };
-}
-
-export async function generateDriveCandidate(params: {
-  labels: ConfirmedLayerLabel[];
-  target: GenerationTarget;
-  actor: string;
-  sourceName: string;
-  source: Buffer;
-  recipe: RecipeMatch;
-  externalProcessingConsent: true;
-}): Promise<NarakaGenerationResult> {
-  if (params.externalProcessingConsent !== true) throw new Error("Explicit consent is required before sending a Drive source to OpenAI Image Edit.");
-  const { labels, target, actor, sourceName, source, recipe } = params;
-  const targetId = target.id;
-  const runId = randomUUID();
-  const started = Date.now();
-  const ratio = Math.max(target.width / target.height, target.height / target.width);
-  const requestedQuality = (process.env.OPENAI_IMAGE_QUALITY?.trim() || "low") as ImageQuality;
-  const quality = ALLOWED_QUALITIES.has(requestedQuality) ? requestedQuality : "low";
-  const requestedModel = process.env.OPENAI_IMAGE_MODEL?.trim() || DEFAULT_IMAGE_MODEL;
-  const model = ALLOWED_MODELS.has(requestedModel) ? requestedModel : DEFAULT_IMAGE_MODEL;
-  const labelSnapshotHash = createLabelSnapshotHash(labels);
-  const rules = await loadGenerationRules();
-  const preflight = validateGenerationFeasibility(target, labels);
-
-  if (preflight.status === "pass_to_designer" || ratio > 3) {
-    const ruleCodes = preflight.status === "pass_to_designer" ? preflight.ruleCodes : ["drive_protected_layers_required"];
-    const reasons = preflight.status === "pass_to_designer" ? preflight.reasons : ["This extreme-ratio Drive source requires extracted protected layers before generation; flattened Image Edit is not allowed to redraw or crop required objects."];
-    await logGenerationRun({ timestamp: new Date().toISOString(), runId, sourceAsset: sourceName, targetSize: targetId, phase: "preflight", status: "pass_to_designer", model: "not_called", quality, promptVersion: recipe.versionId, cacheKey: "not_created", requestId: null, processingTimeMs: Date.now() - started, apiCostUsd: 0, outputUri: null, errorCode: ruleCodes.join(","), errorMessage: reasons.join(" "), actor, labelSnapshotHash, usageJson: null });
-    return { runId, mode: "pass_to_designer", candidates: [], blocked: [{ id: targetId, status: "pass_to_designer", ruleCodes, reasons }], warning: null };
-  }
-
-  const apiCanvas = planApiCanvas(target.width, target.height);
-  const inventory = labels.filter((layer) => layer.finalLabel !== "Ignore").map((layer) => `${layer.name}: ${layer.finalLabel}${layer.importance ? ` (${layer.importance})` : ""}`).join("; ");
-  const resolvedRules = [
-    { slug: "general-recipe", statement: `${recipe.recipeName} (${recipe.versionId})`, why: null, layer: "global" },
-    ...resolvePromptRules(rules, target, labels).map(toResolvedRule),
-  ];
-  const prompt = [
-    `Prompt recipe: ${recipe.recipeName} (${recipe.versionId}).`,
-    `Global safety rules: ${GLOBAL_SAFETY_RULES}`,
-    recipe.industryRules ? `Industry rules: ${recipe.industryRules}` : null,
-    recipe.layoutRules ? `Layout rules: ${recipe.layoutRules}` : null,
-    `Base prompt: ${recipe.basePrompt}`,
-    recipe.requiredElements.length ? `Required elements: ${recipe.requiredElements.join(", ")}` : null,
-    recipe.forbiddenChanges.length ? `Forbidden changes: ${recipe.forbiddenChanges.join(", ")}` : null,
-    `Confirmed visible-object inventory: ${inventory}.`,
-    `Produce one ${target.width}x${target.height} review candidate on working canvas ${apiCanvas.size}. Keep every required object complete and separated. Do not invent source elements.`,
-  ].filter(Boolean).join("\n\n");
-  const sourceHash = createHash("sha256").update(source).digest("hex");
-  const cacheKey = createHash("sha256").update([sourceHash, labelSnapshotHash, targetId, recipe.versionId, model, quality, FINALIZATION_VERSION].join("|")).digest("hex");
-  const filename = `${cacheKey}-${targetId}.png`;
-  const outputPath = path.join(process.cwd(), "outputs", "naraka-mvp", filename);
-  const outputUri = `/api/workspace/outputs/${filename}`;
-
-  // Cache miss: the consented API call below is the only paid path.
-  if (await fileExists(outputPath)) {
-    return { runId, mode: "cache", candidates: [{ id: targetId, src: outputUri, status: "cache_hit", model, quality, promptVersion: recipe.versionId, prompt, resolvedRules, preflightWarnings: preflight.reasons, suggestedTextRatio: null, requestId: null }], blocked: [], warning: null };
-  }
-
-  try {
-    await logGenerationRun({ timestamp: new Date().toISOString(), runId, sourceAsset: sourceName, targetSize: targetId, phase: "generation", status: "generation_started", model, quality, promptVersion: recipe.versionId, cacheKey, requestId: null, processingTimeMs: 0, apiCostUsd: null, outputUri: null, errorCode: null, errorMessage: null, actor, labelSnapshotHash, usageJson: null });
-    const result = await callImageEdit({ source, prompt, size: apiCanvas.size, model, quality });
-    await finalizeImage(result.image, outputPath, target.width, target.height, "crop");
-    await logGenerationRun({ timestamp: new Date().toISOString(), runId, sourceAsset: sourceName, targetSize: targetId, phase: "generation", status: "in_review", model, quality, promptVersion: recipe.versionId, cacheKey, requestId: result.requestId, processingTimeMs: Date.now() - started, apiCostUsd: null, outputUri, errorCode: null, errorMessage: null, actor, labelSnapshotHash, usageJson: result.usage ? JSON.stringify(result.usage) : null });
-    return { runId, mode: "openai", candidates: [{ id: targetId, src: outputUri, status: "in_review", model, quality, promptVersion: recipe.versionId, prompt, resolvedRules, preflightWarnings: preflight.reasons, suggestedTextRatio: null, requestId: result.requestId }], blocked: [], warning: null };
-  } catch (error) {
-    const failure = safeError(error);
-    const fallbackFilename = `fallback-${sourceHash.slice(0, 16)}-${targetId}.png`;
-    const fallbackPath = path.join(process.cwd(), "outputs", "naraka-mvp", fallbackFilename);
-    const fallbackUri = `/api/workspace/outputs/${fallbackFilename}`;
-    await finalizeImage(source, fallbackPath, target.width, target.height, "crop");
-    await logGenerationRun({ timestamp: new Date().toISOString(), runId, sourceAsset: sourceName, targetSize: targetId, phase: "generation", status: "deterministic_fallback", model, quality, promptVersion: recipe.versionId, cacheKey, requestId: failure.requestId, processingTimeMs: Date.now() - started, apiCostUsd: null, outputUri: fallbackUri, errorCode: failure.code, errorMessage: failure.message, actor, labelSnapshotHash, usageJson: null });
-    return { runId, mode: "deterministic_fallback", candidates: [{ id: targetId, src: fallbackUri, status: "deterministic_fallback", model, quality, promptVersion: recipe.versionId, prompt, resolvedRules, preflightWarnings: preflight.reasons, suggestedTextRatio: null, requestId: failure.requestId }], blocked: [], warning: `API fallback used (${failure.code}).` };
-  }
 }

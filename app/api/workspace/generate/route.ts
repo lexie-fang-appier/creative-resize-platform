@@ -1,7 +1,8 @@
+import { readFile } from "node:fs/promises";
 import { NextResponse } from "next/server";
-import { generateDriveCandidate, generateNarakaCandidates, type ConfirmedLayerLabel } from "@/lib/naraka-generation";
+import { generateCandidates, type ConfirmedLayerLabel } from "@/lib/candidate-generation";
 import { listGenerationTargets } from "@/lib/specs";
-import { NARAKA_SOURCES, type NarakaSourceId } from "@/lib/creative-analysis";
+import { EXAMPLE_SOURCES, sourcePath, type ExampleSourceId } from "@/lib/creative-analysis";
 import { getAsset } from "@/lib/assets";
 import { getAssetPreview } from "@/lib/asset-preview";
 import { resolvePromptRecipe } from "@/lib/generation";
@@ -61,10 +62,12 @@ export async function POST(request: Request) {
       const preview = await getAssetPreview(asset);
       if (!preview.ok) return NextResponse.json({ error: preview.reason }, { status: 422 });
       const recipe = await resolvePromptRecipe(job.clientIndustry, job.creativeFormat);
-      return NextResponse.json(await generateDriveCandidate({ labels: body.layerLabels, target: targets[0], actor, sourceName: asset.filename, source: preview.buffer, recipe, externalProcessingConsent: true }));
+      return NextResponse.json(await generateCandidates({ labels: body.layerLabels, targets, actor, sourceAsset: asset.filename, source: preview.buffer, recipe, externalProcessingConsent: true }));
     }
-    if (!body.sourceAsset || !(body.sourceAsset in NARAKA_SOURCES)) return NextResponse.json({ error: "A valid source asset is required." }, { status: 400 });
-    return NextResponse.json(await generateNarakaCandidates(body.layerLabels, targets, actor, body.sourceAsset as NarakaSourceId));
+    if (!body.sourceAsset || !(body.sourceAsset in EXAMPLE_SOURCES)) return NextResponse.json({ error: "A valid source asset is required." }, { status: 400 });
+    const exampleId = body.sourceAsset as ExampleSourceId;
+    const recipe = await resolvePromptRecipe(null, null);
+    return NextResponse.json(await generateCandidates({ labels: body.layerLabels, targets, actor, sourceAsset: exampleId, source: await readFile(sourcePath(exampleId)), recipe }));
   } catch (err) {
     return NextResponse.json({ error: err instanceof Error ? err.message : "Generation failed." }, { status: 500 });
   }

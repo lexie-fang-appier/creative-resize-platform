@@ -51,7 +51,6 @@ const SOURCE_PREVIEW_SRC = "/examples/naraka/YJp814-1920x1080.png";
 const SOURCE_ASSET = "YJp814";
 const DEFAULT_MODEL = "gpt-image-2.5-sunburst";
 const DEFAULT_QUALITY = "low";
-const DEFAULT_PROMPT_VERSION = "naraka-resolved-v13";
 
 function StatusPill({ children, tone = "slate" }: { children: React.ReactNode; tone?: Tone }) {
   const tones = {
@@ -138,7 +137,7 @@ export default function WorkspacePreviewPage() {
   const selectedPrompt = selectedPreview ? candidatePrompts[selectedPreview.id] : undefined;
   const selectedModel = selectedPreview ? candidateModels[selectedPreview.id] : DEFAULT_MODEL;
   const selectedQuality = selectedPreview ? candidateQualities[selectedPreview.id] : DEFAULT_QUALITY;
-  const selectedPromptVersion = selectedPreview ? candidatePromptVersions[selectedPreview.id] : driveContext?.prompt.versionId ?? DEFAULT_PROMPT_VERSION;
+  const selectedPromptVersion = selectedPreview ? candidatePromptVersions[selectedPreview.id] : driveContext?.prompt.versionId ?? "—";
   const selectedResolvedRules = selectedPreview ? candidateResolvedRules[selectedPreview.id] ?? [] : [];
   const selectedTextRatio = selectedPreview ? candidateTextRatios[selectedPreview.id] : undefined;
   const progressStage = elapsedSeconds < 3 ? "Preparing confirmed layer snapshot" : elapsedSeconds < 20 ? "OpenAI is rearranging the artwork" : elapsedSeconds < 45 ? "Rendering the candidate" : "Still rendering this complex image edit";
@@ -356,7 +355,7 @@ export default function WorkspacePreviewPage() {
     const responses = await Promise.all([...new Set(Object.values(generationRunIds))].map((runId) => fetch("/api/workspace/review", {
       method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(driveContext
         ? { runId, decision: "complete", jobId: driveContext.job.id, assetId: driveContext.asset.id, promptVersion: driveContext.prompt.versionId }
-        : { runId, decision: "complete", sourceAsset: SOURCE_ASSET, promptVersion: DEFAULT_PROMPT_VERSION }),
+        : { runId, decision: "complete", sourceAsset: SOURCE_ASSET, promptVersion: candidatePromptVersions[selectedPreviewId] ?? "" }),
     })));
     if (responses.some((response) => !response.ok)) return setNotice("Review could not be completed.");
     setRunComplete(true);
@@ -394,7 +393,7 @@ export default function WorkspacePreviewPage() {
     setCandidateDecisions({});
     setRunComplete(false);
     setExternalProcessingConsent(false);
-    setNotice(driveContext ? "New Drive source run started · authorization required" : "New NARAKA MVP run started");
+    setNotice(driveContext ? "New Drive source run started · authorization required" : "New example run started");
   }
 
   return (
@@ -402,10 +401,10 @@ export default function WorkspacePreviewPage() {
       <header className="mb-5 flex flex-col gap-4 rounded-2xl border border-slate-200 bg-white px-5 py-4 shadow-sm lg:flex-row lg:items-center">
         <div className="min-w-0 flex-1">
           <div className="mb-1 flex items-center gap-2">
-            <StatusPill tone="violet">{driveContext ? "Drive E2E Workspace" : "NARAKA E2E MVP"}</StatusPill>
+            <StatusPill tone="violet">{driveContext ? "Drive E2E Workspace" : "Example source"}</StatusPill>
             <span className="text-xs text-slate-400">{generationMode === "openai" ? "OpenAI-generated · Designer review required" : generationMode === "cache" ? "Cached candidate · no duplicate API cost" : generationMode === "pass_to_designer" ? "Preflight failed · Image API not called" : generationMode ? "Deterministic crop fallback · API issue logged" : "Vision analysis + OpenAI Image Edit"}</span>
           </div>
-          <h1 className="truncate text-xl font-bold tracking-tight text-slate-950">{driveContext ? driveContext.job.clientName : "NARAKA · Character Key Art"}</h1>
+          <h1 className="truncate text-xl font-bold tracking-tight text-slate-950">{driveContext ? driveContext.job.clientName : "Example · Character Key Art"}</h1>
           <p className="mt-1 text-sm text-slate-500">{sourceAssetLabel} · {driveContext?.asset.format ?? "PSD"} source · {driveContext?.job.industry ?? "Gaming"} · {driveContext?.job.creativeFormat ?? "RTB Banner"}</p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
@@ -696,7 +695,7 @@ export default function WorkspacePreviewPage() {
                 <p className="text-sm font-bold text-slate-900">Prompt used</p>
                 <StatusPill tone="violet">{driveContext?.prompt.resolution === "industry" ? "Industry prompt" : driveContext ? "General fallback" : "MVP prompt"}</StatusPill>
               </div>
-              <p className="mt-1 text-[10px] leading-4 text-slate-500">{driveContext ? `${driveContext.prompt.recipeName} · ${driveContext.prompt.resolution === "industry" ? "matched by industry" : "used because no active industry recipe matched"}` : "This NARAKA demo uses the tested code-resolved gaming prompt."}</p>
+              <p className="mt-1 text-[10px] leading-4 text-slate-500">{driveContext ? `${driveContext.prompt.recipeName} · ${driveContext.prompt.resolution === "industry" ? "matched by industry" : "used because no active industry recipe matched"}` : "No Drive job attached — this run resolves the General cross-industry recipe."}</p>
             </div>
             <dl className="grid grid-cols-[auto_1fr] gap-x-3 gap-y-2 px-4 py-3 text-[10px]">
               <dt className="text-slate-400">Model</dt><dd className="break-all font-mono font-semibold text-slate-700">{selectedModel}</dd>

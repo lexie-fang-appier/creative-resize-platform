@@ -2,8 +2,7 @@ import { execFile } from "node:child_process";
 import fs from "node:fs/promises";
 import path from "node:path";
 import { promisify } from "node:util";
-import type { ConfirmedLayerLabel, LayoutFamily } from "./naraka-generation";
-import type { NarakaSourceId } from "./creative-analysis";
+import type { ConfirmedLayerLabel, LayoutFamily } from "./candidate-generation";
 
 const execFileAsync = promisify(execFile);
 
@@ -22,7 +21,7 @@ export interface ExtremeLayerAsset {
 }
 
 export interface ExtremeLayerManifest {
-  sourceAsset: NarakaSourceId;
+  sourceAsset: string;
   sourceWidth: number;
   sourceHeight: number;
   layers: ExtremeLayerAsset[];
@@ -72,11 +71,14 @@ export function missingExtremeRoles(labels: ConfirmedLayerLabel[], manifest: Ext
   return requiredExtremeRoles(labels).filter((role) => !available.has(role));
 }
 
-export function extremeManifestPath(sourceAsset: NarakaSourceId): string {
-  return path.join(process.cwd(), "public", "examples", "naraka", "layers", sourceAsset, "manifest.json");
+/** Extracted transparent layers live one directory per source, keyed by the
+ * source's own name. A Drive asset with no directory simply has no manifest and
+ * is refused at preflight — which is the generic behaviour, not a special case. */
+export function extremeManifestPath(sourceAsset: string): string {
+  return path.join(process.cwd(), "public", "layer-assets", sourceAsset, "manifest.json");
 }
 
-export async function loadExtremeLayerManifest(sourceAsset: NarakaSourceId): Promise<ExtremeLayerManifest | null> {
+export async function loadExtremeLayerManifest(sourceAsset: string): Promise<ExtremeLayerManifest | null> {
   try {
     return JSON.parse(await fs.readFile(extremeManifestPath(sourceAsset), "utf8")) as ExtremeLayerManifest;
   } catch {
@@ -84,7 +86,7 @@ export async function loadExtremeLayerManifest(sourceAsset: NarakaSourceId): Pro
   }
 }
 
-export function buildExtremeBackgroundPrompt(sourceAsset: NarakaSourceId, family: Extract<LayoutFamily, "ultra_landscape" | "ultra_portrait">): string {
+export function buildExtremeBackgroundPrompt(sourceAsset: string, family: Extract<LayoutFamily, "ultra_landscape" | "ultra_portrait">): string {
   return [
     `Create a clean, object-free background plate derived from the supplied ${sourceAsset} key art for an ${family} advertising canvas.`,
     "Extend the original painted environment, lighting, texture, gradients, and color palette naturally across the entire canvas.",
@@ -103,7 +105,7 @@ export function missingWideOverlayRoles(labels: ConfirmedLayerLabel[], manifest:
   return required.filter((role) => !available.has(role));
 }
 
-export function buildWideBasePrompt(sourceAsset: NarakaSourceId, manifest?: ExtremeLayerManifest): string {
+export function buildWideBasePrompt(sourceAsset: string, manifest?: ExtremeLayerManifest): string {
   const hasSupportingVisuals = manifest?.layers.some((layer) => layer.role === "Supporting visual") ?? false;
   const overlayInventory = [...new Set((manifest?.layers ?? []).filter((layer) => layer.approvalStatus !== "experimental").map((layer) => layer.role))];
   return [

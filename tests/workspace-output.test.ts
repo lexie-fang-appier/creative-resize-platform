@@ -19,7 +19,7 @@ describe("workspace output filename validation", () => {
     ];
     for (const filename of filenames) {
       expect(isSafeWorkspaceOutputFilename(filename)).toBe(true);
-      expect(fs.existsSync(path.join(process.cwd(), "outputs", "naraka-mvp", filename))).toBe(true);
+      expect(fs.existsSync(path.join(process.cwd(), "outputs", "candidates", filename))).toBe(true);
     }
   });
 
