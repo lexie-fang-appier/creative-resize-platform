@@ -31,24 +31,38 @@ export function isGeneratable(row: Pick<GapMatrixRow, "route" | "matchedAssetId"
   return GENERATABLE_ROUTES.has(row.route) && row.matchedAssetId != null;
 }
 
-interface RecipeMatch {
-  recipeId: string;
+export interface RecipeMatch {
+  recipeId: string | null;
   recipeName: string;
   versionId: string;
+  persistedVersionId: string | null;
   basePrompt: string;
   industryRules: string | null;
   layoutRules: string | null;
   requiredElements: string[];
   forbiddenChanges: string[];
+  resolution: "industry" | "general_database" | "general_builtin";
 }
+
+export const BUILT_IN_GENERAL_RECIPE: RecipeMatch = {
+  recipeId: null,
+  recipeName: "General — Cross-Industry Baseline",
+  versionId: "general-builtin-v1",
+  persistedVersionId: null,
+  basePrompt: "Recompose the supplied creative for the target canvas while preserving its original brand identity, exact visible copy, primary subject, product, CTA, and compliance content. Extend the real visual environment when needed and rearrange existing elements with clear hierarchy; do not replace missing space with flat padding.",
+  industryRules: null,
+  layoutRules: "Use the target aspect ratio, visible-object bounds, safe margins, and collision-free placement to choose between proportional resize, crop, background extension, and rearrangement.",
+  requiredElements: ["brand identity", "exact visible copy", "primary subject", "compliance content"],
+  forbiddenChanges: ["invented content", "rewritten copy", "distorted logo", "cropped compliance", "flat-color padding"],
+  resolution: "general_builtin",
+};
 
 /** Picks the most specific active recipe for this job: exact
  * industry+format match beats industry-only or format-only beats the fully
- * general (industry & creative_format both null) fallback. Returns null only
- * if there's no active recipe at all — including no general fallback, which
- * means Prompt Lab is empty and Generate should refuse rather than guess. */
-async function findBestRecipe(industry: string | null, creativeFormat: string | null): Promise<RecipeMatch | null> {
-  const rows = await query<RecipeMatch & { industryCol: string | null; formatCol: string | null }>(
+ * general database recipe. If Prompt Lab has no match, the built-in General
+ * baseline keeps the pipeline usable without inventing an industry recipe. */
+export async function resolvePromptRecipe(industry: string | null, creativeFormat: string | null): Promise<RecipeMatch> {
+  const rows = await query<Omit<RecipeMatch, "persistedVersionId" | "resolution"> & { industryCol: string | null; formatCol: string | null }>(
     `select r.id as "recipeId", r.name as "recipeName", v.id as "versionId",
             v.base_prompt as "basePrompt", v.industry_rules as "industryRules", v.layout_rules as "layoutRules",
             coalesce(v.required_elements_json, '[]'::jsonb) as "requiredElements",
@@ -61,7 +75,13 @@ async function findBestRecipe(industry: string | null, creativeFormat: string | 
      limit 1`,
     [industry, creativeFormat],
   );
-  return rows[0] ?? null;
+  const matched = rows[0];
+  if (!matched) return BUILT_IN_GENERAL_RECIPE;
+  return {
+    ...matched,
+    persistedVersionId: matched.versionId,
+    resolution: matched.industryCol === null ? "general_database" : "industry",
+  };
 }
 
 function targetSizeInstruction(dim: { width: number; height: number; deviceScope: string; mustHaveLevel: string }): string {
@@ -73,7 +93,7 @@ export function composeResolvedPrompt(
   dim: { width: number; height: number; deviceScope: string; mustHaveLevel: string },
   campaignInstruction: string | null,
 ): string {
-  const parts = [`Global safety rules: ${GLOBAL_SAFETY_RULES}`];
+  const parts = [`Prompt recipe: ${recipe.recipeName} (${recipe.versionId})`, `Global safety rules: ${GLOBAL_SAFETY_RULES}`];
   if (recipe.industryRules) parts.push(`Industry rules: ${recipe.industryRules}`);
   if (recipe.layoutRules) parts.push(`Layout rules: ${recipe.layoutRules}`);
   parts.push(`Base prompt: ${recipe.basePrompt}`);
@@ -143,10 +163,7 @@ export interface CreateGenerationRunResult {
 export async function createGenerationRun(job: Job, row: GapMatrixRow): Promise<CreateGenerationRunResult> {
   if (!isGeneratable(row)) throw new Error(`Route ${row.route} is not generatable, or has no matched asset.`);
 
-  const recipe = await findBestRecipe(job.clientIndustry, job.creativeFormat);
-  if (!recipe) {
-    throw new Error("No active prompt recipe found — not even a general fallback. Create one in Prompt Lab first.");
-  }
+  const recipe = await resolvePromptRecipe(job.clientIndustry, job.creativeFormat);
 
   const sourceAssetIds = [row.matchedAssetId!];
   const cacheKey = computeCacheKey(sourceAssetIds, row.specDimension.id, recipe.versionId);
@@ -173,7 +190,7 @@ export async function createGenerationRun(job: Job, row: GapMatrixRow): Promise<
       row.assetGroupId,
       row.route,
       recipe.recipeId,
-      recipe.versionId,
+      recipe.persistedVersionId,
       resolvedPrompt,
       cacheKey,
     ],
