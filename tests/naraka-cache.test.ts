@@ -70,3 +70,25 @@ describe("cache hits never reach the paid API", () => {
     expect(fetchSpy).not.toHaveBeenCalled();
   });
 });
+
+describe("a broken audit trail is an error, not a worse image", () => {
+  let fetchSpy: ReturnType<typeof spyOnFetch>;
+
+  beforeEach(() => {
+    mocks.access.mockReset().mockRejectedValue(new Error("ENOENT")); // cache miss
+    mocks.logGenerationRun.mockReset().mockResolvedValue(undefined);
+    fetchSpy = spyOnFetch();
+  });
+
+  afterEach(() => fetchSpy.mockRestore());
+
+  it("propagates a required-log failure instead of answering with a fallback candidate", async () => {
+    // This log used to sit inside the try that catches image-API errors, so an
+    // unconfigured audit sheet was caught as a failed generation and answered
+    // with a deterministic fallback — the audit silently downgrading the output.
+    mocks.logGenerationRun.mockRejectedValue(new Error("Google Sheet logging is required but not configured."));
+
+    await expect(generateNarakaCandidates(LABELS, [TARGET_500], "designer@appier.com", "YJp814")).rejects.toThrow(/required but not configured/);
+    expect(fetchSpy).not.toHaveBeenCalled();
+  });
+});

@@ -18,7 +18,9 @@ const execFileAsync = promisify(execFile);
 // rules, different byte order, so the bump invalidates the v13 cache honestly.
 export const NARAKA_PROMPT_VERSION = "naraka-resolved-v14";
 export const DEFAULT_IMAGE_MODEL = "gpt-image-2.5-sunburst";
-const FINALIZATION_VERSION = "contain-edge-align-v2";
+// Names the pipeline the cache key stands for. It used to say contain-edge-align,
+// a mode nothing passes any more, so a key could not be read back to what made it.
+const FINALIZATION_VERSION = "centre-crop-v3";
 
 export type LayoutFamily = "ultra_landscape" | "landscape" | "standard" | "portrait" | "ultra_portrait";
 export type ImageQuality = "low" | "medium" | "high" | "xhigh" | "max";
@@ -257,7 +259,7 @@ async function callImageEdit(params: { source: Buffer; prompt: string; size: str
   return { image: Buffer.from(payload.data[0].b64_json, "base64"), requestId, usage: payload.usage ?? null };
 }
 
-async function finalizeImage(input: Buffer, outputPath: string, width: number, height: number, mode: "crop" | "contain_edge_extend" | "background_cover" = "crop"): Promise<void> {
+async function finalizeImage(input: Buffer, outputPath: string, width: number, height: number, mode: "crop" | "background_cover" = "crop"): Promise<void> {
   const temporaryPath = `${outputPath}.source.png`;
   await fs.mkdir(path.dirname(outputPath), { recursive: true });
   await fs.writeFile(temporaryPath, input);
@@ -374,8 +376,13 @@ export async function generateNarakaCandidates(labels: ConfirmedLayerLabel[], ta
       continue;
     }
 
+    // Outside the try on purpose: this logger throws when the audit sheet is
+    // unconfigured, and inside, that throw would be caught as a failed
+    // generation and answered with a fallback candidate — a broken audit trail
+    // quietly turning into a worse image instead of an error.
+    await logGenerationRun({ timestamp: new Date().toISOString(), runId, sourceAsset, targetSize: targetId, phase: "generation", status: "generation_started", model, quality, promptVersion: NARAKA_PROMPT_VERSION, cacheKey, requestId: null, processingTimeMs: 0, apiCostUsd: null, outputUri: null, errorCode: null, errorMessage: null, actor, labelSnapshotHash, usageJson: null });
+
     try {
-      await logGenerationRun({ timestamp: new Date().toISOString(), runId, sourceAsset, targetSize: targetId, phase: "generation", status: "generation_started", model, quality, promptVersion: NARAKA_PROMPT_VERSION, cacheKey, requestId: null, processingTimeMs: 0, apiCostUsd: null, outputUri: null, errorCode: null, errorMessage: null, actor, labelSnapshotHash, usageJson: null });
       const result = await callImageEdit({ source, prompt: apiPrompt, size: apiCanvas.size, model, quality });
       if (extremeFamily && extremeManifest) {
         const backgroundPath = `${outputPath}.background.png`;
@@ -408,7 +415,19 @@ export async function generateNarakaCandidates(labels: ConfirmedLayerLabel[], ta
         continue;
       }
       errors.push(`${targetId}: ${failure.code}`);
-      await finalizeImage(source, fallbackOutputPath, target.width, target.height, finalizationMode);
+      try {
+        await finalizeImage(source, fallbackOutputPath, target.width, target.height, finalizationMode);
+      } catch (fallbackError) {
+        // The fallback is the last resort, so its own failure has nowhere to
+        // fall back to. It must still not discard the targets that succeeded
+        // earlier in this run.
+        const fallbackFailure = safeError(fallbackError);
+        const ruleCodes = ["fallback_render_failed"];
+        const reasons = [`The image API failed (${failure.code}) and the deterministic fallback could not be rendered either: ${fallbackFailure.message}`];
+        blocked.push({ id: targetId, status: "pass_to_designer", ruleCodes, reasons });
+        await logGenerationRun({ timestamp: new Date().toISOString(), runId, sourceAsset, targetSize: targetId, phase: "generation", status: "pass_to_designer", model, quality, promptVersion: NARAKA_PROMPT_VERSION, cacheKey, requestId: failure.requestId, processingTimeMs: Date.now() - started, apiCostUsd: null, outputUri: null, errorCode: ruleCodes[0], errorMessage: reasons[0], actor, labelSnapshotHash, usageJson: null });
+        continue;
+      }
       candidates.push({ id: targetId, src: fallbackOutputUri, status: "deterministic_fallback", model, quality, promptVersion: NARAKA_PROMPT_VERSION, prompt, resolvedRules, preflightWarnings: preflight.reasons, suggestedTextRatio, requestId: failure.requestId });
       await logGenerationRun({ timestamp: new Date().toISOString(), runId, sourceAsset, targetSize: targetId, phase: "generation", status: "deterministic_fallback", model, quality, promptVersion: NARAKA_PROMPT_VERSION, cacheKey, requestId: failure.requestId, processingTimeMs: Date.now() - started, apiCostUsd: null, outputUri: fallbackOutputUri, errorCode: failure.code, errorMessage: failure.message, actor, labelSnapshotHash, usageJson: null });
     }
