@@ -22,6 +22,19 @@ def family_roles(family: str) -> frozenset[str]:
     return frozenset(boxes(1000, 1000, family))
 
 
+def resample_for(scale: float) -> Image.Resampling:
+    """Pick the filter by direction.
+
+    Enlarging keeps NEAREST: no convolution touches the original pixels or
+    shifts their colour values. Shrinking cannot keep them all — NEAREST just
+    discards the ones it skips, which on this content means a compliance badge's
+    caption breaking into disconnected blocks and PS5/STEAM marks going chunky
+    (checked by eye at 12x against the real layers, not assumed). LANCZOS
+    resolves the discarded detail into the pixels that survive.
+    """
+    return Image.Resampling.NEAREST if scale >= 1 else Image.Resampling.LANCZOS
+
+
 FAMILIES = ("ultra_landscape", "ultra_portrait", "wide_landscape")
 
 
@@ -29,8 +42,7 @@ def fit_layer(image: Image.Image, box: tuple[int, int, int, int], fixed_scale: f
     x, y, width, height = box
     scale = fixed_scale if fixed_scale is not None else min(width / image.width, height / image.height)
     size = (max(1, round(image.width * scale)), max(1, round(image.height * scale)))
-    # Preserve original pixels and color values; no convolution filter is used.
-    resized = image.resize(size, Image.Resampling.NEAREST)
+    resized = image.resize(size, resample_for(scale))
     return resized, (x + (width - size[0]) // 2, y + (height - size[1]) // 2)
 
 
@@ -63,7 +75,7 @@ def trim_transparent(image: Image.Image) -> Image.Image:
 
 
 def scaled(image: Image.Image, scale: float) -> Image.Image:
-    return image.resize((max(1, round(image.width * scale)), max(1, round(image.height * scale))), Image.Resampling.NEAREST)
+    return image.resize((max(1, round(image.width * scale)), max(1, round(image.height * scale))), resample_for(scale))
 
 
 def overlaps(first: tuple[int, int, int, int], second: tuple[int, int, int, int]) -> bool:

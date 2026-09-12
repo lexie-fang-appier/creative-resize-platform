@@ -8,6 +8,19 @@ from pathlib import Path
 from PIL import Image, ImageStat
 
 
+def resample_for(scale: float) -> Image.Resampling:
+    """Pick the filter by direction.
+
+    Enlarging keeps NEAREST: no convolution touches the original pixels or
+    shifts their colour values. Shrinking cannot keep them all — NEAREST just
+    discards the ones it skips, which on this content means a compliance badge's
+    caption breaking into disconnected blocks and PS5/STEAM marks going chunky
+    (checked by eye at 12x against the real layers, not assumed). LANCZOS
+    resolves the discarded detail into the pixels that survive.
+    """
+    return Image.Resampling.NEAREST if scale >= 1 else Image.Resampling.LANCZOS
+
+
 def main() -> None:
     if len(sys.argv) not in (5, 6):
         raise SystemExit("usage: finalize_generated_image.py INPUT OUTPUT WIDTH HEIGHT [crop|contain_edge_extend|background_cover]")
@@ -21,7 +34,7 @@ def main() -> None:
             scale = max(width / image.width, height / image.height)
             cover_width = max(width, round(image.width * scale))
             cover_height = max(height, round(image.height * scale))
-            cover = source_rgb.resize((cover_width, cover_height), resample=Image.Resampling.NEAREST)
+            cover = source_rgb.resize((cover_width, cover_height), resample=resample_for(scale))
             left = (cover_width - width) // 2
             top = (cover_height - height) // 2
             crop_box = (left, top, left + width, top + height)
@@ -30,7 +43,7 @@ def main() -> None:
             scale = min(width / image.width, height / image.height)
             contained_width = max(1, round(image.width * scale))
             contained_height = max(1, round(image.height * scale))
-            contained = source_rgb.resize((contained_width, contained_height), resample=Image.Resampling.NEAREST)
+            contained = source_rgb.resize((contained_width, contained_height), resample=resample_for(scale))
             # Extreme-ratio prompts pin Compliance to the far/right or bottom
             # edge. Align the retained composition to that same edge so the
             # background extension cannot push it away from the final corner.
@@ -64,13 +77,14 @@ def main() -> None:
                 crop_width = max(1, round(image.height * target_ratio))
                 left = (image.width - crop_width) // 2
                 crop_box = (left, 0, left + crop_width, image.height)
-            result = source_rgb.crop(crop_box).resize((width, height), resample=Image.Resampling.NEAREST)
+            cropped = source_rgb.crop(crop_box)
+            result = cropped.resize((width, height), resample=resample_for(width / cropped.width))
         Path(output).parent.mkdir(parents=True, exist_ok=True)
         save_args = {"optimize": True}
         if image.info.get("icc_profile"):
             save_args["icc_profile"] = image.info["icc_profile"]
         result.save(output, "PNG", **save_args)
-    print(json.dumps({"ok": True, "width": width, "height": height, "mode": mode, "crop_box": crop_box, "resampling": "nearest"}))
+    print(json.dumps({"ok": True, "width": width, "height": height, "mode": mode, "crop_box": crop_box, "resampling": "nearest-up/lanczos-down"}))
 
 
 if __name__ == "__main__":
