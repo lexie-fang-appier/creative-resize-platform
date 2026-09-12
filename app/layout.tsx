@@ -8,7 +8,7 @@ const inter = Inter({ subsets: ["latin"], variable: "--font-sans" });
 
 export const metadata: Metadata = {
   title: "Creative Resize Platform",
-  description: "Internal Designer workbench for creative asset resize/redesign (Phase 0 scaffold)",
+  description: "Designer-in-the-loop workbench for structured creative resize and review",
 };
 
 export default function RootLayout({

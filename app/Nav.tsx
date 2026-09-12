@@ -6,6 +6,7 @@ import { signOut, useSession } from "next-auth/react";
 
 const LINKS = [
   { href: "/jobs/new", label: "New Job" },
+  { href: "/workspace", label: "Workspace Preview" },
   { href: "/prompts", label: "Prompts" },
 ];
 
@@ -30,6 +31,7 @@ export default function Nav() {
               // right after creating one — there's no Job List to browse from —
               // so it counts as "New Job" for nav-highlighting purposes.
               (l.href === "/jobs/new" && pathname?.startsWith("/jobs/") && pathname !== "/jobs/new") ||
+              (l.href === "/workspace" && pathname?.startsWith("/workspace")) ||
               (l.href === "/prompts" && pathname?.startsWith("/prompts/") && pathname !== "/prompts/new");
             return (
               <Link
