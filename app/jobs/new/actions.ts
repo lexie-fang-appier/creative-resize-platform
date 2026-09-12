@@ -2,13 +2,10 @@
 
 /**
  * Job Create server action — validate Drive access, create the job + target
- * placements, kick off the scan (real or dev-fixture, see lib/drive.ts),
- * compute the Gap Matrix, then redirect to the job detail page. Per §11's
- * state machine: draft -> scanning -> scanned|scan_error -> gap_analyzed ->
- * routed, all driven synchronously in this one request — Phase 1 has no async
- * job queue yet (that's a later-phase architecture piece per §5), and this
- * repo's dev-fixture scan / DB-only gap computation is fast enough that a
- * synchronous request is a reasonable Phase 1 scope call.
+ * placements, run a metadata-only scan, then redirect to source selection.
+ * File download, PSD probing, and Gap Matrix computation are deliberately
+ * deferred until the user chooses one source, so Job creation never downloads
+ * every large creative in the Drive folder.
  *
  * 2026-09-07: simplified per Lexie's request ("我可以不要填那麼多嗎？就放 drive folder
  * url就好") — ad_solution/channel/creative_format are no longer typed in by hand;
@@ -24,7 +21,6 @@
 import { redirect } from "next/navigation";
 import { insertScannedAssets } from "@/lib/assets";
 import { getDriveScanner, parseFolderId } from "@/lib/drive";
-import { computeGapMatrixForJob } from "@/lib/gap-matrix";
 import { createJob, updateJobStatus } from "@/lib/jobs";
 import { requireSessionEmail } from "@/lib/require-session";
 import { listPlacements, soleAdSolutionAndChannel } from "@/lib/specs";
@@ -43,6 +39,7 @@ export async function createJobAction(_prevState: CreateJobState, formData: Form
   const targetPlacements = formData.getAll("targetPlacements").map(String).filter(Boolean);
 
   if (!driveFolderUrl) return { error: "Drive folder URL is required." };
+  if (!industry) return { error: "Select an industry." };
   if (targetPlacements.length === 0) return { error: "Select at least one target placement." };
 
   const driveFolderId = parseFolderId(driveFolderUrl);
@@ -79,16 +76,15 @@ export async function createJobAction(_prevState: CreateJobState, formData: Form
 
   try {
     await updateJobStatus(job.id, "scanning");
-    const scanned = await scanner.scanFolder(driveFolderUrl);
+    // Metadata-only first pass: do not download every file before the user can
+    // choose the actual source. Deep PSD/image probing happens after selection.
+    const scanned = await scanner.scanFolderMetadata(driveFolderUrl);
     await insertScannedAssets(job.id, scanned);
 
     if (scanned.length === 0) {
       await updateJobStatus(job.id, "scan_error");
     } else {
       await updateJobStatus(job.id, "scanned");
-      await computeGapMatrixForJob(job.id);
-      await updateJobStatus(job.id, "gap_analyzed");
-      await updateJobStatus(job.id, "routed");
     }
   } catch {
     // Job-level scan failure (distinct from the per-asset scan_error column —
@@ -97,5 +93,5 @@ export async function createJobAction(_prevState: CreateJobState, formData: Form
     await updateJobStatus(job.id, "scan_error");
   }
 
-  redirect(`/jobs/${job.id}`);
+  redirect(`/jobs/${job.id}/source`);
 }

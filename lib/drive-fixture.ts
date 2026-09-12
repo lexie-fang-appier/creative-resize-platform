@@ -27,4 +27,12 @@ export class DriveFixtureScanner implements DriveScanner {
     // between. Returns the same ported real-ticket dataset every time.
     return DEV_FIXTURE_ASSETS;
   }
+
+  async scanFolderMetadata(_folderUrl: string): Promise<ScannedAsset[]> {
+    return DEV_FIXTURE_ASSETS;
+  }
+
+  async probeAsset(asset: ScannedAsset): Promise<ScannedAsset> {
+    return DEV_FIXTURE_ASSETS.find((candidate) => candidate.driveFileId === asset.driveFileId) ?? asset;
+  }
 }

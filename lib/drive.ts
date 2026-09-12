@@ -64,6 +64,10 @@ export interface DriveScanner {
    * API once in real mode, blocking Job creation on failure. Trivially
    * succeeds in fixture mode. */
   checkAccess(folderUrl: string): Promise<AccessCheckResult>;
+  /** Fast first pass: lists Drive metadata only and never downloads file bodies. */
+  scanFolderMetadata(folderUrl: string): Promise<ScannedAsset[]>;
+  /** Deep inspection is deferred until the user selects one source file. */
+  probeAsset(asset: ScannedAsset): Promise<ScannedAsset>;
   scanFolder(folderUrl: string): Promise<ScannedAsset[]>;
 }
 
@@ -117,6 +121,17 @@ export function isFixtureMode(): boolean {
   return !process.env.GOOGLE_SERVICE_ACCOUNT_JSON;
 }
 
+export function getDriveServiceAccountEmail(): string | null {
+  const raw = process.env.GOOGLE_SERVICE_ACCOUNT_JSON;
+  if (!raw) return null;
+  try {
+    const credentials = JSON.parse(raw) as { client_email?: string };
+    return credentials.client_email ?? null;
+  } catch {
+    return null;
+  }
+}
+
 export function getDriveScanner(): DriveScanner {
   return isFixtureMode() ? new DriveFixtureScanner() : new RealDriveScanner();
 }
@@ -150,6 +165,8 @@ interface DriveFileNode {
   mimeType: string;
   size?: string;
   md5Checksum?: string;
+  imageMediaMetadata?: { width?: number | null; height?: number | null };
+  videoMediaMetadata?: { width?: number | null; height?: number | null; durationMillis?: string | null };
 }
 
 async function listFilesRecursive(drive: drive_v3.Drive, folderId: string): Promise<DriveFileNode[]> {
@@ -158,7 +175,7 @@ async function listFilesRecursive(drive: drive_v3.Drive, folderId: string): Prom
   do {
     const res = await drive.files.list({
       q: `'${folderId}' in parents and trashed = false`,
-      fields: "nextPageToken, files(id, name, mimeType, size, md5Checksum)",
+      fields: "nextPageToken, files(id, name, mimeType, size, md5Checksum,imageMediaMetadata(width,height),videoMediaMetadata(width,height,durationMillis))",
       pageToken,
       pageSize: 200,
     });
@@ -168,7 +185,15 @@ async function listFilesRecursive(drive: drive_v3.Drive, folderId: string): Prom
         if (EXCLUDED_FOLDER_NAME.test(f.name)) continue; // path-based Done/Resize exclusion, not time-based
         out.push(...(await listFilesRecursive(drive, f.id)));
       } else {
-        out.push({ id: f.id, name: f.name, mimeType: f.mimeType, size: f.size ?? undefined, md5Checksum: f.md5Checksum ?? undefined });
+        out.push({
+          id: f.id,
+          name: f.name,
+          mimeType: f.mimeType,
+          size: f.size ?? undefined,
+          md5Checksum: f.md5Checksum ?? undefined,
+          imageMediaMetadata: f.imageMediaMetadata ?? undefined,
+          videoMediaMetadata: f.videoMediaMetadata ?? undefined,
+        });
       }
     }
     pageToken = res.data.nextPageToken ?? undefined;
@@ -248,24 +273,33 @@ async function psdProbe(filePath: string): Promise<PsdProbeResult> {
   return JSON.parse(stdout) as PsdProbeResult;
 }
 
-async function probeFile(drive: drive_v3.Drive, f: DriveFileNode): Promise<ScannedAsset> {
-  const base: ScannedAsset = {
+function metadataToScannedAsset(f: DriveFileNode): ScannedAsset {
+  const imageWidth = f.imageMediaMetadata?.width ?? null;
+  const imageHeight = f.imageMediaMetadata?.height ?? null;
+  const videoWidth = f.videoMediaMetadata?.width ?? null;
+  const videoHeight = f.videoMediaMetadata?.height ?? null;
+  const durationMillis = Number(f.videoMediaMetadata?.durationMillis);
+  return {
     driveFileId: f.id,
     filename: f.name,
     mimeType: f.mimeType,
     format: mimeToFormat(f.mimeType),
-    width: null,
-    height: null,
+    width: imageWidth ?? videoWidth,
+    height: imageHeight ?? videoHeight,
     fileSizeBytes: f.size ? Number(f.size) : null,
-    videoDurationSec: null,
+    videoDurationSec: Number.isFinite(durationMillis) ? durationMillis / 1000 : null,
     psdCanvasW: null,
     psdCanvasH: null,
     contentHash: f.md5Checksum ?? null,
-    isFlattened: null,
+    isFlattened: isImageMime(f.mimeType) || f.mimeType === "video/mp4" ? true : null,
     hasMultipleArtboards: null,
     redesignEligible: null,
     scanError: null,
   };
+}
+
+async function probeFile(drive: drive_v3.Drive, f: DriveFileNode): Promise<ScannedAsset> {
+  const base = metadataToScannedAsset(f);
 
   try {
     if (isImageMime(f.mimeType)) {
@@ -360,20 +394,32 @@ export class RealDriveScanner implements DriveScanner {
   }
 
   async scanFolder(folderUrl: string): Promise<ScannedAsset[]> {
+    const metadata = await this.scanFolderMetadata(folderUrl);
+    return runWithConcurrency(metadata, 4, (asset) => this.probeAsset(asset));
+  }
+
+  async scanFolderMetadata(folderUrl: string): Promise<ScannedAsset[]> {
     const folderId = parseFolderId(folderUrl);
     if (!folderId) throw new Error("Could not parse a Drive folder ID out of this URL.");
     const drive = getDriveClient();
     const files = await listFilesRecursive(drive, folderId);
-    // Found 2026-09-07 against a real 10-file/~200MB folder: probeFile()'s
-    // Drive download is the bottleneck (one file measured at 64s for 19.8MB,
-    // ~300KB/s — the actual psd_probe.py parse of that same file took 342ms,
-    // not the bottleneck at all). Processing sequentially meant a real
-    // Designer-sized folder blocked the single synchronous Job Create request
-    // for 10+ minutes with zero progress feedback. A proper fix is Phase 2's
-    // async job queue (§5) — this is a bounded stopgap for Phase 1: bound
-    // concurrency (Drive quotas + this box's bandwidth are the real ceiling,
-    // not something to fix by adding more parallelism than that) rather than
-    // fully serializing every file's download.
-    return runWithConcurrency(files, 4, (f) => probeFile(drive, f));
+    return files.map(metadataToScannedAsset);
+  }
+
+  async probeAsset(asset: ScannedAsset): Promise<ScannedAsset> {
+    const drive = getDriveClient();
+    return probeFile(drive, {
+      id: asset.driveFileId,
+      name: asset.filename,
+      mimeType: asset.mimeType ?? "application/octet-stream",
+      size: asset.fileSizeBytes == null ? undefined : String(asset.fileSizeBytes),
+      md5Checksum: asset.contentHash ?? undefined,
+      imageMediaMetadata: { width: asset.width, height: asset.height },
+      videoMediaMetadata: {
+        width: asset.width,
+        height: asset.height,
+        durationMillis: asset.videoDurationSec == null ? null : String(asset.videoDurationSec * 1000),
+      },
+    });
   }
 }

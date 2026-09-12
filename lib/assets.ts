@@ -83,6 +83,23 @@ export async function getAsset(id: string): Promise<AssetRow | null> {
   return rows[0] ?? null;
 }
 
+export async function updateScannedAsset(id: string, asset: ScannedAsset): Promise<void> {
+  await query(
+    `update assets set
+       mime_type = $2, format = $3, width = $4, height = $5,
+       file_size_bytes = $6, video_duration_sec = $7, psd_canvas_w = $8,
+       psd_canvas_h = $9, content_hash = $10, is_flattened = $11,
+       has_multiple_artboards = $12, redesign_eligible = $13, scan_error = $14
+     where id = $1`,
+    [
+      id, asset.mimeType, asset.format, asset.width, asset.height,
+      asset.fileSizeBytes, asset.videoDurationSec, asset.psdCanvasW,
+      asset.psdCanvasH, asset.contentHash, asset.isFlattened,
+      asset.hasMultipleArtboards, asset.redesignEligible, asset.scanError,
+    ],
+  );
+}
+
 export async function listAssetsForJob(jobId: string): Promise<AssetRow[]> {
   return query<AssetRow>(
     `select id, job_id as "jobId", drive_file_id as "driveFileId", filename,

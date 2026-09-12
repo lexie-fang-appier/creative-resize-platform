@@ -7,7 +7,7 @@ import { createJobAction, type CreateJobState } from "./actions";
 
 const initialState: CreateJobState = {};
 
-export default function NewJobForm({ placements, industries }: { placements: PlacementOption[]; industries: Industry[] }) {
+export default function NewJobForm({ placements, industries, driveAccountEmail }: { placements: PlacementOption[]; industries: Industry[]; driveAccountEmail: string | null }) {
   const [state, formAction, pending] = useActionState(createJobAction, initialState);
 
   // Populated from spec_versions, not hardcoded — see lib/specs.ts. ad_solution
@@ -41,6 +41,16 @@ export default function NewJobForm({ placements, industries }: { placements: Pla
           placeholder="https://drive.google.com/drive/folders/..."
           className={input}
         />
+        {driveAccountEmail && <p className="mt-2 rounded-md bg-slate-50 px-3 py-2 text-xs leading-5 text-slate-600">Share the folder as <strong>Viewer</strong> with <span className="break-all font-mono font-semibold">{driveAccountEmail}</span> before continuing.</p>}
+      </div>
+
+      <div>
+        <label className={label} htmlFor="industry">Industry</label>
+        <select id="industry" name="industry" className={input} defaultValue="" required>
+          <option value="" disabled>Select industry…</option>
+          {industries.map((industry) => <option key={industry.id} value={industry.name}>{industry.name}</option>)}
+        </select>
+        <p className="mt-1.5 text-xs text-slate-400">If no active industry recipe exists, non-gaming work uses the General baseline.</p>
       </div>
 
       <fieldset>
@@ -64,7 +74,7 @@ export default function NewJobForm({ placements, industries }: { placements: Pla
       <details className="group rounded-md border border-slate-200">
         <summary className="cursor-pointer select-none px-3 py-2 text-sm font-medium text-slate-600 marker:content-none">
           <span className="inline-block transition-transform group-open:rotate-90">▸</span> Optional details (client
-          name, industry, campaign instruction)
+          name and campaign instruction)
         </summary>
         <div className="space-y-4 border-t border-slate-200 px-3 py-4">
           <div>
@@ -72,19 +82,6 @@ export default function NewJobForm({ placements, industries }: { placements: Pla
               Client <span className="font-normal text-slate-400">— defaults to the Drive folder&rsquo;s name</span>
             </label>
             <input id="clientName" name="clientName" type="text" className={input} />
-          </div>
-          <div>
-            <label className={label} htmlFor="industry">
-              Industry
-            </label>
-            <select id="industry" name="industry" className={input} defaultValue="">
-              <option value="">Select…</option>
-              {industries.map((i) => (
-                <option key={i.id} value={i.name}>
-                  {i.name}
-                </option>
-              ))}
-            </select>
           </div>
           <div>
             <label className={label} htmlFor="campaignInstruction">
@@ -103,7 +100,7 @@ export default function NewJobForm({ placements, industries }: { placements: Pla
         >
           {pending ? "Creating…" : "Create Job"}
         </button>
-        <span className="text-xs text-slate-400">Scans the folder and computes the Gap Matrix immediately.</span>
+        <span className="text-xs text-slate-400">Lists Drive file metadata first; no source files are downloaded yet.</span>
       </div>
     </form>
   );
