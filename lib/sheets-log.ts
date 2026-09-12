@@ -11,6 +11,7 @@ import { google } from "googleapis";
 
 const NEW_JOB_TAB = "New Job";
 const PROMPTS_TAB = "Prompts";
+const GENERATION_RUNS_TAB = "Generation Runs";
 
 function getSheetsClient() {
   const spreadsheetId = process.env.CREATIVE_RESIZE_LOG_SHEET_ID;
@@ -31,9 +32,12 @@ function getSheetsClient() {
   return { sheets: google.sheets({ version: "v4", auth: auth as unknown as string }), spreadsheetId };
 }
 
-async function appendRow(tab: string, row: Array<string | number | null>): Promise<void> {
+async function appendRow(tab: string, row: Array<string | number | null>, required = false): Promise<void> {
   const client = getSheetsClient();
-  if (!client) return;
+  if (!client) {
+    if (required) throw new Error("Google Sheet logging is required but not configured.");
+    return;
+  }
   try {
     await client.sheets.spreadsheets.values.append({
       spreadsheetId: client.spreadsheetId,
@@ -44,6 +48,7 @@ async function appendRow(tab: string, row: Array<string | number | null>): Promi
     });
   } catch (err) {
     console.error(`sheets-log: failed to append to "${tab}":`, err);
+    if (required) throw err;
   }
 }
 
@@ -105,4 +110,48 @@ export async function logPromptVersion(params: {
     params.status,
     params.createdBy,
   ]);
+}
+
+export async function logGenerationRun(params: {
+  timestamp: string;
+  runId: string;
+  sourceAsset: string;
+  targetSize: string;
+  phase: string;
+  status: string;
+  model: string;
+  quality: string;
+  promptVersion: string;
+  cacheKey: string;
+  requestId: string | null;
+  processingTimeMs: number;
+  apiCostUsd: number | null;
+  outputUri: string | null;
+  errorCode: string | null;
+  errorMessage: string | null;
+  actor: string;
+  labelSnapshotHash: string;
+  usageJson: string | null;
+}): Promise<void> {
+  await appendRow(GENERATION_RUNS_TAB, [
+    params.timestamp,
+    params.runId,
+    params.sourceAsset,
+    params.targetSize,
+    params.phase,
+    params.status,
+    params.model,
+    params.quality,
+    params.promptVersion,
+    params.cacheKey,
+    params.requestId,
+    params.processingTimeMs,
+    params.apiCostUsd,
+    params.outputUri,
+    params.errorCode,
+    params.errorMessage,
+    params.actor,
+    params.labelSnapshotHash,
+    params.usageJson,
+  ], true);
 }
