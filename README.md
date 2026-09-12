@@ -146,11 +146,13 @@ Worth reading before evaluating this as more finished than it is.
 - **Image generation is Workspace-only.** `/workspace` calls the OpenAI Image
   Edit API after labels are confirmed; generic Job Generate still only queues a
   run for someone to execute by hand.
-- **Extracted-layer composition needs a hand-written layer map per asset.**
-  `scripts/prepare_extreme_layers.py` maps PSD layer names to roles from a
-  literal table with two assets in it. Anything at or past 3:1 routes through
-  the compositor and therefore needs that table filled in first, so a new
-  client's asset does not work end-to-end without an edit to the script.
+- **Extracted-layer composition still needs a confirmed layer map per asset.**
+  `scripts/prepare_extreme_layers.py --draft` proposes one by matching PSD
+  layers against a cached vision analysis, but a person has to check the roles
+  and mark the map confirmed before anything exports — roles decide what the
+  compositor may move and what it must refuse to drop. Two assets are confirmed
+  today (`db/layer-maps/`), and anything at or past 3:1 routes through the
+  compositor, so a new client's asset needs that pass first.
 - **Example assets are not in the repo.** `public/examples/naraka/` is a real
   client's key art plus the layers extracted from it, and is gitignored for the
   same reason 0ca46c8 removed screenshots showing real client names. A fresh

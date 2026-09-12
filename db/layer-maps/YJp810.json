@@ -1,0 +1,71 @@
+{
+  "sourceAsset": "YJp810",
+  "status": "confirmed",
+  "confirmedBy": "lexie.fang@appier.com",
+  "note": "Transcribed from the LAYER_MAPS literal this file replaced; already used to produce shipped candidates.",
+  "layers": [
+    {
+      "layerName": "中式logo-NAKARA繁體(上白下白)",
+      "id": "brand-logo",
+      "role": "Brand logo",
+      "required": true,
+      "z": 30
+    },
+    {
+      "layerName": "群組 2",
+      "id": "supporting-visual-left",
+      "role": "Supporting visual",
+      "required": false,
+      "z": 10
+    },
+    {
+      "layerName": "群組 2 拷貝",
+      "id": "supporting-visual-right",
+      "role": "Supporting visual",
+      "required": false,
+      "z": 11
+    },
+    {
+      "layerName": "群組 2 拷貝 2",
+      "id": "supporting-visual-top",
+      "role": "Supporting visual",
+      "required": false,
+      "z": 12
+    },
+    {
+      "layerName": "577badad59376887731259ae7efbdc91c57da1c2682c96-9LGq9S",
+      "id": "headline",
+      "role": "Headline",
+      "required": true,
+      "z": 40
+    },
+    {
+      "layerName": "群組 3",
+      "id": "supporting-copy",
+      "role": "Supporting copy",
+      "required": true,
+      "z": 41
+    },
+    {
+      "layerName": "群組 1",
+      "id": "platform-marks",
+      "role": "Platform marks",
+      "required": true,
+      "z": 43
+    },
+    {
+      "layerName": "圖層 6",
+      "id": "cta",
+      "role": "CTA",
+      "required": true,
+      "z": 42
+    },
+    {
+      "layerName": "分級標章15+",
+      "id": "compliance",
+      "role": "Compliance",
+      "required": true,
+      "z": 100
+    }
+  ]
+}

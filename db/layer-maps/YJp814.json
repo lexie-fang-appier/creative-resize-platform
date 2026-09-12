@@ -1,0 +1,36 @@
+{
+  "sourceAsset": "YJp814",
+  "status": "confirmed",
+  "confirmedBy": "lexie.fang@appier.com",
+  "note": "Transcribed from the LAYER_MAPS literal this file replaced; already used to produce shipped candidates.",
+  "layers": [
+    {
+      "layerName": "繁中",
+      "id": "brand-logo",
+      "role": "Brand logo",
+      "required": true,
+      "z": 30
+    },
+    {
+      "layerName": "西行志",
+      "id": "headline",
+      "role": "Headline",
+      "required": true,
+      "z": 40
+    },
+    {
+      "layerName": "特木爾全新外觀",
+      "id": "supporting-copy",
+      "role": "Supporting copy",
+      "required": true,
+      "z": 41
+    },
+    {
+      "layerName": "分級標章15+",
+      "id": "compliance",
+      "role": "Compliance",
+      "required": true,
+      "z": 100
+    }
+  ]
+}
