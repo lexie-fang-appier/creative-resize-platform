@@ -1,5 +1,15 @@
 import { describe, expect, it } from "vitest";
 import { createLabelSnapshotHash, planApiCanvas, planFinalCrop, resolveLayoutFamily, resolvePromptRules, validateGenerationFeasibility } from "../lib/naraka-generation";
+import { readFileSync } from "node:fs";
+import type { GenerationRule } from "../lib/recipe-rules";
+
+// The seed file is the same text the database is loaded from, so these assertions
+// run against the real rule set without needing a live database.
+const RULES: GenerationRule[] = [...readFileSync("db/seed_recipe_rules_generation.sql", "utf8")
+  .matchAll(/\(\s*'[0-9a-f-]{36}',\s*'([a-z-]+)',\s*'((?:[^']|'')*)',\s*(?:null|'(?:[^']|'')*'),\s*'(\{.*?\})'::jsonb,\s*'([a-z]+)',\s*'[a-z]+',\s*'([a-z]+)'/g)]
+  .map((m) => ({ slug: m[1], statement: m[2].replace(/''/g, "'"), why: null, enforcement: m[4], layer: m[5] as GenerationRule["layer"], appliesTo: JSON.parse(m[3].replace(/''/g, "'")) }));
+
+const slugs = (rules: { slug: string }[]) => rules.map((rule) => rule.slug);
 
 describe("NARAKA Image API canvas planning", () => {
   it("maps an extreme target to the Image API supported 3:1 boundary", () => {
@@ -24,10 +34,10 @@ describe("NARAKA Image API canvas planning", () => {
   });
 
   it("resolves portrait and detected-object rules deterministically", () => {
-    const rules = resolvePromptRules("320x480", [
+    const rules = slugs(resolvePromptRules(RULES, "320x480", [
       { name: "Character", machineLabel: "Hero", finalLabel: "Hero", decision: "confirmed" },
       { name: "15+", machineLabel: "Compliance", finalLabel: "Compliance", decision: "confirmed" },
-    ]);
+    ]));
     expect(rules).toContain("portrait-hero-center");
     expect(rules).toContain("keep-hero-identity-area-visible");
     expect(rules).toContain("keep-compliance-in-source-corner");
@@ -35,9 +45,9 @@ describe("NARAKA Image API canvas planning", () => {
   });
 
   it("always resolves the complete compliance badge rule when compliance is present", () => {
-    const rules = resolvePromptRules("300x250", [
+    const rules = slugs(resolvePromptRules(RULES, "300x250", [
       { name: "Age badge", machineLabel: "Compliance", finalLabel: "Compliance", decision: "confirmed", importance: "required" },
-    ]);
+    ]));
     expect(rules).toContain("keep-compliance-in-source-corner");
   });
 
@@ -100,14 +110,14 @@ describe("NARAKA Image API canvas planning", () => {
   });
 
   it("adds zone and optional-first rules for extreme ratios", () => {
-    expect(resolvePromptRules("1456x180", [])).toContain("ultra-landscape-zones");
-    expect(resolvePromptRules("320x1200", [])).toContain("ultra-portrait-zones");
-    expect(resolvePromptRules("320x1200", [])).toContain("optional-elements-omit-first");
+    expect(slugs(resolvePromptRules(RULES, "1456x180", []))).toContain("ultra-landscape-zones");
+    expect(slugs(resolvePromptRules(RULES, "320x1200", []))).toContain("ultra-portrait-zones");
+    expect(slugs(resolvePromptRules(RULES, "320x1200", []))).toContain("optional-elements-omit-first");
   });
 
   it("protects the final crop band for 3:1 to 4:1 landscape targets", () => {
-    expect(resolvePromptRules("1940x500", [])).toContain("wide-landscape-crop-safe-band");
-    expect(resolvePromptRules("640x200", [])).toContain("wide-landscape-crop-safe-band");
-    expect(resolvePromptRules("1200x627", [])).not.toContain("wide-landscape-crop-safe-band");
+    expect(slugs(resolvePromptRules(RULES, "1940x500", []))).toContain("wide-landscape-crop-safe-band");
+    expect(slugs(resolvePromptRules(RULES, "640x200", []))).toContain("wide-landscape-crop-safe-band");
+    expect(slugs(resolvePromptRules(RULES, "1200x627", []))).not.toContain("wide-landscape-crop-safe-band");
   });
 });

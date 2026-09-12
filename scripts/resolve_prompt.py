@@ -65,6 +65,11 @@ def fetch_rules():
 
 def applies(rule, aspect: str, traits: set) -> bool:
     spec = rule["applies_to"]
+    # The generation pipeline resolves the same table by layout family and
+    # confirmed roles, a different taxonomy. Its rules are not addressed to a
+    # person doing a manual resize, so they never belong in this prompt.
+    if spec.get("surface") == "generate":
+        return False
     want_aspect = spec.get("aspect", ["any"])
     if "any" not in want_aspect and aspect not in want_aspect:
         return False

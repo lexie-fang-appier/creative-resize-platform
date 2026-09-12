@@ -7,11 +7,15 @@ import { logGenerationRun } from "./sheets-log";
 import { NARAKA_SOURCES, sourcePath, type NarakaSourceId } from "./creative-analysis";
 import type { RecipeMatch } from "./generation";
 import { GLOBAL_SAFETY_RULES } from "./prompts";
+import { loadGenerationRules, selectGenerationRules, type GenerationRule } from "./recipe-rules";
 import { buildExtremeBackgroundPrompt, buildWideBasePrompt, composeExtremeLayout, EXTREME_COMPOSITOR_VERSION, extremeManifestPath, loadExtremeLayerManifest, missingExtremeRoles, missingWideOverlayRoles, requiresExtremeCompositor, suggestWideTextRatio, unplaceableRequiredRoles, WIDE_OVERLAY_VERSION } from "./extreme-compositor";
 
 const execFileAsync = promisify(execFile);
 
-export const NARAKA_PROMPT_VERSION = "naraka-resolved-v13";
+// v14: rule text and applicability moved to recipe_rules, and the resolved list
+// is now sorted by (layer, slug) instead of assembled in if/else order. Same
+// rules, different byte order, so the bump invalidates the v13 cache honestly.
+export const NARAKA_PROMPT_VERSION = "naraka-resolved-v14";
 export const DEFAULT_IMAGE_MODEL = "gpt-image-2.5-sunburst";
 const FINALIZATION_VERSION = "contain-edge-align-v2";
 
@@ -72,6 +76,17 @@ export interface BlockedGenerationTarget extends GenerationPreflightResult {
   id: NarakaTargetId;
 }
 
+export interface ResolvedRule {
+  slug: string;
+  statement: string;
+  why: string | null;
+  layer: string;
+}
+
+export function toResolvedRule(rule: GenerationRule): ResolvedRule {
+  return { slug: rule.slug, statement: rule.statement, why: rule.why, layer: rule.layer };
+}
+
 export interface GenerationCandidate {
   id: NarakaTargetId;
   src: string;
@@ -80,7 +95,9 @@ export interface GenerationCandidate {
   quality: ImageQuality;
   promptVersion: string;
   prompt: string;
-  resolvedRules: string[];
+  /** Carried to the client so the Workspace can list what applied without
+   * keeping its own copy of the rule labels — the copy that had already drifted. */
+  resolvedRules: ResolvedRule[];
   preflightWarnings: string[];
   suggestedTextRatio: number | null;
   requestId: string | null;
@@ -186,62 +203,31 @@ export function createLabelSnapshotHash(labels: ConfirmedLayerLabel[]): string {
   return createHash("sha256").update(JSON.stringify(labels)).digest("hex");
 }
 
-export function resolvePromptRules(targetId: NarakaTargetId, labels: ConfirmedLayerLabel[]): string[] {
+export function resolvePromptRules(rules: GenerationRule[], targetId: NarakaTargetId, labels: ConfirmedLayerLabel[]): GenerationRule[] {
   const target = NARAKA_TARGETS[targetId];
-  const ratio = target.width / target.height;
-  const activeLabels = new Set(labels.filter((layer) => layer.finalLabel !== "Ignore").map((layer) => layer.finalLabel));
-  const rules = ["preserve-brand-and-visible-copy", "protect-required-objects", "no-stretch"];
-  const family = resolveLayoutFamily(target.width, target.height);
-  if (family === "ultra_landscape") rules.push("extreme-layer-compositor", "background-outpaint-only", "ultra-landscape-zones", "optional-elements-omit-first");
-  else if (family === "landscape") {
-    rules.push("landscape-safe-zone", "horizontal-copy-row");
-    if (ratio > 3) rules.push("wide-landscape-crop-safe-band", "wide-protected-layer-overlay");
-  }
-  else if (family === "ultra_portrait") rules.push("extreme-layer-compositor", "background-outpaint-only", "ultra-portrait-zones", "optional-elements-omit-first");
-  else if (family === "portrait") rules.push("portrait-hero-center", "stack-copy-with-clear-separation");
-  else rules.push("balanced-recomposition");
-  if (activeLabels.has("Compliance")) rules.push("keep-compliance-in-source-corner");
-  if (activeLabels.has("Brand logo")) rules.push("keep-logo-legible");
-  if (activeLabels.has("Hero")) rules.push("keep-hero-identity-area-visible");
-  return rules;
+  return selectGenerationRules(rules, {
+    layoutFamily: resolveLayoutFamily(target.width, target.height),
+    aspectRatio: target.width / target.height,
+    roles: new Set(labels.filter((layer) => layer.finalLabel !== "Ignore").map((layer) => layer.finalLabel)),
+  });
 }
 
-function buildPrompt(sourceAsset: NarakaSourceId, targetId: NarakaTargetId, labels: ConfirmedLayerLabel[], apiCanvas: ReturnType<typeof planApiCanvas>): { prompt: string; resolvedRules: string[] } {
+function buildPrompt(rules: GenerationRule[], sourceAsset: string, targetId: NarakaTargetId, labels: ConfirmedLayerLabel[], apiCanvas: ReturnType<typeof planApiCanvas>): { prompt: string; resolvedRules: GenerationRule[] } {
   const target = NARAKA_TARGETS[targetId];
   const layoutFamily = resolveLayoutFamily(target.width, target.height);
   const suggestedTextRatio = layoutFamily === "landscape" && target.width / target.height > 3 ? suggestWideTextRatio(target.width, target.height) : null;
   const crop = planFinalCrop(target.width, target.height, apiCanvas);
-  const resolvedRules = resolvePromptRules(targetId, labels);
+  const resolvedRules = resolvePromptRules(rules, targetId, labels);
   const inventory = labels.filter((layer) => layer.finalLabel !== "Ignore").map((layer) => `${layer.name}: ${layer.finalLabel}${layer.importance ? ` (${layer.importance}, ${layer.resizeBehavior ?? "preserve"})` : ""}`).join("; ");
-  const ruleText: Record<string, string> = {
-    "preserve-brand-and-visible-copy": "Preserve the same brand identity and exact visible copy; do not invent, translate, rewrite, or omit text.",
-    "protect-required-objects": "Keep every required object visible and separated from other solid object mass.",
-    "no-stretch": "Never stretch or squeeze people, logos, or typography.",
-    "extreme-layer-compositor": "Generate only the background with the Image API, then place approved transparent original-pixel layers with the deterministic compositor.",
-    "background-outpaint-only": "Outpaint the source environment across the full canvas without flat-color padding or regenerated foreground objects.",
-    "ultra-landscape-zones": "Use one compact horizontal row across the working canvas: brand at the left, compact hero next, headline/copy/CTA next, and the complete compliance badge at the outer-right corner. Keep the outer background simple so it can be extended without repeating objects.",
-    "landscape-safe-zone": "Keep all required content inside the final extraction region and use a horizontal visual hierarchy.",
-    "horizontal-copy-row": "Use a horizontal copy row rather than a tall text stack.",
-    "wide-landscape-crop-safe-band": "The Image API working canvas is taller than the delivered banner. Keep the top 12% and bottom 12% completely free of logos, people, copy, CTA, platform marks, compliance, and decorative frames. Place every required object's complete bounds inside the central 76% horizontal band; only continuous painted background may enter the trim zones.",
-    "wide-protected-layer-overlay": "Generate the hero and scene plate without protected foreground content, apply the final crop, then place only the original PSD layers present in the confirmed inventory inside deterministic safe zones. Never invent a missing CTA, platform mark, gameplay frame, or other object.",
-    "ultra-portrait-zones": "Use a top-to-bottom composition across the working canvas: brand at top, complete hero identity area in the middle, headline/copy/CTA below, and the complete compliance badge at the outer-bottom corner. Keep the outer background simple so it can be extended without repeating objects.",
-    "optional-elements-omit-first": "If space is limited, omit optional decorative or supporting visual elements before shrinking, cropping, obstructing, or omitting any required element.",
-    "portrait-hero-center": "Center the hero's visual body mass in the portrait frame and keep the identity area visible.",
-    "stack-copy-with-clear-separation": "Stack copy only where it remains readable and clearly separated from the hero.",
-    "balanced-recomposition": "Recompose the inventory with balanced visual hierarchy for the target ratio.",
-    "keep-compliance-in-source-corner": "Compliance is a hard constraint. Keep the entire compliance badge visible in a corner: uncropped, unobstructed, undistorted, and with its complete border and contents intact. It may remain small, but no part may leave the canvas.",
-    "keep-logo-legible": "Keep the brand logo complete and legible.",
-    "keep-hero-identity-area-visible": "Keep the hero's complete face, head details, and primary silhouette visible.",
-  };
   const prompt = [
-    `Edit the supplied ${sourceAsset} NARAKA key art into one production advertising candidate.`,
+    `Edit the supplied ${sourceAsset} key art into one production advertising candidate.`,
     `Confirmed layer inventory: ${inventory}.`,
     `Layout family: ${layoutFamily}. Compose for final target ${target.width}x${target.height} on API working canvas ${apiCanvas.size}.`,
     ...(suggestedTextRatio === null ? [] : [`Typography recommendation: target Headline height ${Math.round(suggestedTextRatio * 100)}% of the final canvas height. Scale Headline, supporting copy, and CTA uniformly from their original PSD layers; treat this as a recommendation bounded by safe-zone fit, not a fixed per-size constant.`]),
     layoutFamily === "ultra_landscape" || layoutFamily === "ultra_portrait"
       ? `Use the Image API only to create a full-bleed object-free background plate. Then resize and reposition approved transparent original-pixel layers on the exact ${target.width}x${target.height} canvas. Do not crop protected objects, regenerate text, or use flat-color padding.`
       : `FINAL EXTRACTION REGION on the working canvas is x=${crop.x}, y=${crop.y}, width=${crop.width}, height=${crop.height}. Every required object's complete visible bounds must remain inside this region. Pixels outside it are working margin and will not appear in the delivered image.`,
-    ...resolvedRules.map((ruleId) => `[${ruleId}] ${ruleText[ruleId]}`),
+    ...resolvedRules.map((rule) => `[${rule.slug}] ${rule.statement}`),
     layoutFamily === "ultra_landscape" || layoutFamily === "ultra_portrait"
       ? "Return the deterministic layer-compositor result as one review candidate."
       : "Return one flattened candidate image only. This candidate still requires Designer review.",
@@ -325,6 +311,7 @@ function safeError(err: unknown): { code: string; message: string; requestId: st
 export async function generateNarakaCandidates(labels: ConfirmedLayerLabel[], targetIds: NarakaTargetId[], actor: string, sourceAsset: NarakaSourceId = "YJp813"): Promise<NarakaGenerationResult> {
   const runId = randomUUID();
   if (!(sourceAsset in NARAKA_SOURCES)) throw new Error("Unsupported NARAKA source asset.");
+  const rules = await loadGenerationRules();
   const source = await fs.readFile(sourcePath(sourceAsset));
   const sourceHash = createHash("sha256").update(source).digest("hex");
   const labelSnapshotHash = createLabelSnapshotHash(labels);
@@ -387,8 +374,8 @@ export async function generateNarakaCandidates(labels: ConfirmedLayerLabel[], ta
       continue;
     }
     const apiCanvas = planApiCanvas(target.width, target.height);
-    const resolved = buildPrompt(sourceAsset, targetId, labels, apiCanvas);
-    const resolvedRules = resolved.resolvedRules;
+    const resolved = buildPrompt(rules, sourceAsset, targetId, labels, apiCanvas);
+    const resolvedRules = resolved.resolvedRules.map(toResolvedRule);
     const prompt = preflight.status === "ready_with_warnings"
       ? `${resolved.prompt}\n\n[preflight-review-warning] Attempt a candidate for human evaluation. Do not omit, crop, obstruct, or distort required objects to make the composition fit. Known risks: ${preflight.reasons.join(" ")}`
       : resolved.prompt;
@@ -476,6 +463,7 @@ export async function generateDriveCandidate(params: {
   const requestedModel = process.env.OPENAI_IMAGE_MODEL?.trim() || DEFAULT_IMAGE_MODEL;
   const model = ALLOWED_MODELS.has(requestedModel) ? requestedModel : DEFAULT_IMAGE_MODEL;
   const labelSnapshotHash = createLabelSnapshotHash(labels);
+  const rules = await loadGenerationRules();
   const preflight = validateGenerationFeasibility(targetId, labels);
 
   if (preflight.status === "pass_to_designer" || ratio > 3) {
@@ -487,7 +475,10 @@ export async function generateDriveCandidate(params: {
 
   const apiCanvas = planApiCanvas(target.width, target.height);
   const inventory = labels.filter((layer) => layer.finalLabel !== "Ignore").map((layer) => `${layer.name}: ${layer.finalLabel}${layer.importance ? ` (${layer.importance})` : ""}`).join("; ");
-  const resolvedRules = ["general-recipe", ...resolvePromptRules(targetId, labels)];
+  const resolvedRules = [
+    { slug: "general-recipe", statement: `${recipe.recipeName} (${recipe.versionId})`, why: null, layer: "global" },
+    ...resolvePromptRules(rules, targetId, labels).map(toResolvedRule),
+  ];
   const prompt = [
     `Prompt recipe: ${recipe.recipeName} (${recipe.versionId}).`,
     `Global safety rules: ${GLOBAL_SAFETY_RULES}`,

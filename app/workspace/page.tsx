@@ -4,6 +4,10 @@ import Image from "next/image";
 import { useEffect, useMemo, useState } from "react";
 
 type Tone = "slate" | "green" | "amber" | "violet";
+// Rule text arrives with the candidate, resolved from recipe_rules. The page
+// used to keep its own label dictionary, which had already drifted away from
+// what the resolver emits.
+type ResolvedRule = { slug: string; statement: string; why: string | null; layer: string };
 type GenerationState = "idle" | "running" | "ready";
 type CandidateDecision = "adopted" | "rejected";
 type GenerationMode = "openai" | "deterministic_fallback" | "mixed" | "cache" | "pass_to_designer";
@@ -39,28 +43,6 @@ type Target = {
   src: string;
   qa: string;
   tone: Tone;
-};
-
-const RULE_DETAILS: Record<string, [string, string]> = {
-  "preserve-brand-and-visible-copy": ["Preserve brand and exact copy", "Always applied"],
-  "protect-required-objects": ["Protect required objects", "From AI importance labels"],
-  "no-stretch": ["Do not stretch objects", "Always applied"],
-  "extreme-layer-compositor": ["Reposition approved source layers", "Extreme ratios only · original foreground pixels"],
-  "background-outpaint-only": ["Outpaint background only", "No flat-color padding or regenerated text"],
-  "extreme-landscape-safe-zone": ["Use extreme-landscape safe zone", "Target ratio > 3:1"],
-  "ultra-landscape-zones": ["Use ultra-landscape zones", "Target ratio > 4:1"],
-  "landscape-safe-zone": ["Keep content inside landscape safe zone", "Target ratio between 2:1 and 4:1"],
-  "wide-landscape-crop-safe-band": ["Reserve background-only trim zones", "Target ratio between 3:1 and 4:1 · protects required objects from final crop"],
-  "wide-protected-layer-overlay": ["Restore protected PSD layers after crop", "Original Logo, copy, CTA, platform marks and Compliance"],
-  "ultra-portrait-zones": ["Use ultra-portrait zones", "Target ratio narrower than 1:3"],
-  "optional-elements-omit-first": ["Omit optional elements first", "Never sacrifice required content to keep decoration"],
-  "horizontal-copy-row": ["Arrange copy horizontally", "Target ratio > 3:1"],
-  "portrait-hero-center": ["Center hero body mass", "Target ratio < 0.8"],
-  "stack-copy-with-clear-separation": ["Stack copy with separation", "Target ratio < 0.8"],
-  "balanced-recomposition": ["Use balanced recomposition", "Standard target ratio"],
-  "keep-compliance-in-source-corner": ["Keep compliance complete in a corner", "Hard constraint · must be uncropped and unobstructed"],
-  "keep-logo-legible": ["Keep logo complete and legible", "Brand logo detected"],
-  "keep-hero-identity-area-visible": ["Keep hero identity area visible", "Hero detected"],
 };
 
 const TARGETS: Target[] = [
@@ -120,7 +102,7 @@ export default function WorkspacePreviewPage() {
   const [candidateQualities, setCandidateQualities] = useState<Record<string, string>>({});
   const [candidatePromptVersions, setCandidatePromptVersions] = useState<Record<string, string>>({});
   const [candidatePrompts, setCandidatePrompts] = useState<Record<string, string>>({});
-  const [candidateResolvedRules, setCandidateResolvedRules] = useState<Record<string, string[]>>({});
+  const [candidateResolvedRules, setCandidateResolvedRules] = useState<Record<string, ResolvedRule[]>>({});
   const [candidatePreflightWarnings, setCandidatePreflightWarnings] = useState<Record<string, string[]>>({});
   const [candidateTextRatios, setCandidateTextRatios] = useState<Record<string, number>>({});
   const [blockedTargets, setBlockedTargets] = useState<Record<string, { ruleCodes: string[]; reasons: string[] }>>({});
@@ -295,7 +277,7 @@ export default function WorkspacePreviewPage() {
       const result = await response.json() as {
         runId?: string;
         mode?: GenerationMode;
-        candidates?: Array<{ id: string; src: string; status: string; model: string; quality: string; promptVersion: string; prompt: string; resolvedRules: string[]; preflightWarnings: string[]; suggestedTextRatio: number | null }>;
+        candidates?: Array<{ id: string; src: string; status: string; model: string; quality: string; promptVersion: string; prompt: string; resolvedRules: ResolvedRule[]; preflightWarnings: string[]; suggestedTextRatio: number | null }>;
         blocked?: Array<{ id: string; status: "pass_to_designer"; ruleCodes: string[]; reasons: string[] }>;
         warning?: string | null;
         error?: string;
@@ -728,20 +710,19 @@ export default function WorkspacePreviewPage() {
               <p className="mt-0.5 text-xs text-slate-400">Chosen deterministically from target ratio and confirmed object labels</p>
             </div>
             <div className="divide-y divide-slate-100">
-              {selectedResolvedRules.map((ruleId) => {
-                const [rule, reason] = RULE_DETAILS[ruleId] ?? [ruleId, "Resolved by the prompt router"];
-                return <details key={ruleId} className="group px-4 py-3">
+              {selectedResolvedRules.map((rule) => (
+                <details key={rule.slug} className="group px-4 py-3">
                   <summary className="flex cursor-pointer list-none items-start gap-2">
                     <span className="mt-1 h-2 w-2 rounded-full bg-emerald-500" />
-                    <span className="min-w-0 flex-1 text-xs font-semibold text-slate-700">{rule}</span>
+                    <span className="min-w-0 flex-1 text-xs font-semibold text-slate-700">{rule.statement}</span>
                     <span className="text-xs text-slate-400 transition group-open:rotate-180">⌄</span>
                   </summary>
                   <div className="ml-4 mt-2 rounded-lg bg-slate-50 p-2.5">
-                    <p className="text-[10px] leading-4 text-slate-600">{reason}</p>
-                    <p className="mt-1 font-mono text-[9px] text-slate-400">{ruleId}</p>
+                    {rule.why && <p className="text-[10px] leading-4 text-slate-600">{rule.why}</p>}
+                    <p className={`font-mono text-[9px] text-slate-400 ${rule.why ? "mt-1" : ""}`}>{rule.layer} · {rule.slug}</p>
                   </div>
-                </details>;
-              })}
+                </details>
+              ))}
               {selectedResolvedRules.length === 0 && <p className="px-4 py-4 text-[10px] leading-4 text-slate-400">Generate a size to see exactly which rules were selected and inserted into its prompt.</p>}
             </div>
             <div className="border-t border-slate-100 px-4 py-3 text-[10px] leading-4 text-slate-400">The LLM identifies objects; code selects rules. The LLM does not decide which policy applies.</div>

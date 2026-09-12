@@ -18,6 +18,15 @@ vi.mock("node:fs/promises", () => {
 
 vi.mock("../lib/sheets-log", () => ({ logGenerationRun: mocks.logGenerationRun }));
 
+// The rule set comes from recipe_rules; this suite is about the cache path, so
+// it stands in a minimal one rather than requiring a database.
+vi.mock("../lib/recipe-rules", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../lib/recipe-rules")>()),
+  loadGenerationRules: async () => [
+    { slug: "no-stretch", statement: "Never stretch.", why: null, layer: "global" as const, enforcement: "eye", appliesTo: { surface: "generate", layoutFamily: ["any"] } },
+  ],
+}));
+
 const { generateNarakaCandidates } = await import("../lib/naraka-generation");
 
 const LABELS = [
