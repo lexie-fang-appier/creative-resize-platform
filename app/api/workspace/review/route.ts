@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { NARAKA_TARGETS } from "@/lib/naraka-generation";
+import { listGenerationTargets } from "@/lib/specs";
 import { requireSessionEmail } from "@/lib/require-session";
 import { logGenerationRun } from "@/lib/sheets-log";
 import { NARAKA_SOURCES } from "@/lib/creative-analysis";
@@ -39,7 +39,7 @@ export async function POST(request: Request) {
   } else if (!sourceAsset || !(sourceAsset in NARAKA_SOURCES)) {
     return NextResponse.json({ error: "Invalid source asset." }, { status: 400 });
   }
-  if (body.decision !== "complete" && (!body.targetId || !(body.targetId in NARAKA_TARGETS))) return NextResponse.json({ error: "Invalid target size." }, { status: 400 });
+  if (body.decision !== "complete" && (!body.targetId || !(await listGenerationTargets()).some((target) => target.id === body.targetId))) return NextResponse.json({ error: "Invalid target size." }, { status: 400 });
 
   await logGenerationRun({
     timestamp: new Date().toISOString(),

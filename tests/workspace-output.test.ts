@@ -27,9 +27,14 @@ describe("workspace output filename validation", () => {
     expect(isSafeWorkspaceOutputFilename(`fallback-${"b".repeat(16)}-672x560.png`)).toBe(true);
   });
 
-  it("rejects unregistered dimensions and path traversal", () => {
-    expect(isSafeWorkspaceOutputFilename(`${HASH}-999x999.png`)).toBe(false);
+  it("rejects anything that is not this exact filename shape", () => {
+    // A size this route has never heard of is not a safety problem — the shape
+    // is. Requiring a known target here only coupled a static-file route to the
+    // spec tables, so the check is now the pattern alone.
     expect(isSafeWorkspaceOutputFilename(`../${HASH}-600x500.png`)).toBe(false);
+    expect(isSafeWorkspaceOutputFilename(`${HASH}/../600x500.png`)).toBe(false);
     expect(isSafeWorkspaceOutputFilename(`${HASH}-600x500.jpg`)).toBe(false);
+    expect(isSafeWorkspaceOutputFilename(`${"a".repeat(63)}-600x500.png`)).toBe(false);
+    expect(isSafeWorkspaceOutputFilename(`${HASH}-600x0.png`)).toBe(false);
   });
 });

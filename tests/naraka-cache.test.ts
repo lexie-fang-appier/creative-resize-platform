@@ -29,6 +29,8 @@ vi.mock("../lib/recipe-rules", async (importOriginal) => ({
 
 const { generateNarakaCandidates } = await import("../lib/naraka-generation");
 
+const TARGET_500 = { id: "500x500", width: 500, height: 500, placement: "Banner", deviceScope: "mobile_only", mustHaveLevel: "required" };
+
 const LABELS = [
   { name: "Character", machineLabel: "Hero", finalLabel: "Hero", decision: "confirmed", importance: "required" as const },
 ];
@@ -51,7 +53,7 @@ describe("cache hits never reach the paid API", () => {
   });
 
   it("serves the cached candidate without calling the image API", async () => {
-    const result = await generateNarakaCandidates(LABELS, ["500x500"], "designer@appier.com", "YJp814");
+    const result = await generateNarakaCandidates(LABELS, [TARGET_500], "designer@appier.com", "YJp814");
 
     expect(result.candidates).toHaveLength(1);
     expect(result.candidates[0].status).toBe("cache_hit");
@@ -64,7 +66,7 @@ describe("cache hits never reach the paid API", () => {
     // this throw was read as a cache MISS and the run paid for the image again.
     mocks.logGenerationRun.mockRejectedValue(new Error("Google Sheet logging is required but not configured."));
 
-    await expect(generateNarakaCandidates(LABELS, ["500x500"], "designer@appier.com", "YJp814")).rejects.toThrow(/required but not configured/);
+    await expect(generateNarakaCandidates(LABELS, [TARGET_500], "designer@appier.com", "YJp814")).rejects.toThrow(/required but not configured/);
     expect(fetchSpy).not.toHaveBeenCalled();
   });
 });

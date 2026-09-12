@@ -7,6 +7,7 @@ import { logGenerationRun } from "./sheets-log";
 import { NARAKA_SOURCES, sourcePath, type NarakaSourceId } from "./creative-analysis";
 import type { RecipeMatch } from "./generation";
 import { GLOBAL_SAFETY_RULES } from "./prompts";
+import type { GenerationTarget } from "./specs";
 import { loadGenerationRules, selectGenerationRules, type GenerationRule } from "./recipe-rules";
 import { buildExtremeBackgroundPrompt, buildWideBasePrompt, composeExtremeLayout, EXTREME_COMPOSITOR_VERSION, extremeManifestPath, loadExtremeLayerManifest, missingExtremeRoles, missingWideOverlayRoles, requiresExtremeCompositor, suggestWideTextRatio, unplaceableRequiredRoles, WIDE_OVERLAY_VERSION } from "./extreme-compositor";
 
@@ -19,28 +20,6 @@ export const NARAKA_PROMPT_VERSION = "naraka-resolved-v14";
 export const DEFAULT_IMAGE_MODEL = "gpt-image-2.5-sunburst";
 const FINALIZATION_VERSION = "contain-edge-align-v2";
 
-export const NARAKA_TARGETS = {
-  "600x500": { width: 600, height: 500 },
-  "640x100": { width: 640, height: 100 },
-  "640x960": { width: 640, height: 960 },
-  "1456x180": { width: 1456, height: 180 },
-  "672x560": { width: 672, height: 560 },
-  "600x1200": { width: 600, height: 1200 },
-  "320x1200": { width: 320, height: 1200 },
-  "500x500": { width: 500, height: 500 },
-  "1940x500": { width: 1940, height: 500 },
-  "640x200": { width: 640, height: 200 },
-  "1200x627": { width: 1200, height: 627 },
-  "160x160": { width: 160, height: 160 },
-  "960x640": { width: 960, height: 640 },
-  "970x250": { width: 970, height: 250 },
-  "300x600": { width: 300, height: 600 },
-  "320x480": { width: 320, height: 480 },
-  "300x250": { width: 300, height: 250 },
-  "320x50": { width: 320, height: 50 },
-} as const;
-
-export type NarakaTargetId = keyof typeof NARAKA_TARGETS;
 export type LayoutFamily = "ultra_landscape" | "landscape" | "standard" | "portrait" | "ultra_portrait";
 export type ImageQuality = "low" | "medium" | "high" | "xhigh" | "max";
 const ALLOWED_MODELS = new Set(["gpt-image-2.5-sunburst", "gpt-image-2.5-flare"]);
@@ -73,7 +52,7 @@ export interface GenerationPreflightResult {
 }
 
 export interface BlockedGenerationTarget extends GenerationPreflightResult {
-  id: NarakaTargetId;
+  id: string;
 }
 
 export interface ResolvedRule {
@@ -88,7 +67,7 @@ export function toResolvedRule(rule: GenerationRule): ResolvedRule {
 }
 
 export interface GenerationCandidate {
-  id: NarakaTargetId;
+  id: string;
   src: string;
   status: "in_review" | "deterministic_fallback" | "cache_hit";
   model: string;
@@ -111,8 +90,8 @@ export interface NarakaGenerationResult {
   warning: string | null;
 }
 
-export function validateGenerationFeasibility(targetId: NarakaTargetId, labels: ConfirmedLayerLabel[]): GenerationPreflightResult {
-  const target = NARAKA_TARGETS[targetId];
+export function validateGenerationFeasibility(target: GenerationTarget, labels: ConfirmedLayerLabel[]): GenerationPreflightResult {
+  const targetId = target.id;
   const aspectRatio = Math.max(target.width, target.height) / Math.min(target.width, target.height);
   const active = labels.filter((layer) => layer.finalLabel !== "Ignore");
   const required = active.filter((layer) => layer.importance === "required");
@@ -127,14 +106,15 @@ export function validateGenerationFeasibility(targetId: NarakaTargetId, labels: 
   const hasProtectedCopy = ["Headline", "Supporting copy", "CTA"].some((role) => requiredRoles.has(role));
   const hasProtectedBrand = requiredRoles.has("Brand logo") || requiredRoles.has("Compliance");
 
-  if (targetId === "960x640") {
+  // Provisional is a spec_dimensions column, not a size this file recognises.
+  if (target.mustHaveLevel === "provisional") {
     ruleCodes.push("pending_spec_confirmation");
-    reasons.push("960x640 is provisional. This candidate is experimental and must not be counted as a required deliverable until the spec owner confirms it.");
+    reasons.push(`${targetId} is provisional in ${target.placement}. This candidate is experimental and must not be counted as a required deliverable until the spec owner confirms it.`);
   }
-  if (targetId === "160x160" && !roles.has("App icon")) {
+  if (target.placement === "Native" && target.width === target.height && target.width <= 256 && !roles.has("App icon")) {
     hasBlockingFailure = true;
     ruleCodes.push("dedicated_app_icon_source_required");
-    reasons.push("Native 160x160 requires a dedicated App icon object; the full key art or brand wordmark must not be reduced into an app icon.");
+    reasons.push(`Native ${targetId} is an app-icon slot and requires a dedicated App icon object; the full key art or brand wordmark must not be reduced into an app icon.`);
   }
 
   if (Math.min(target.width, target.height) < 64 && protectedForeground.length >= 3) {
@@ -203,8 +183,7 @@ export function createLabelSnapshotHash(labels: ConfirmedLayerLabel[]): string {
   return createHash("sha256").update(JSON.stringify(labels)).digest("hex");
 }
 
-export function resolvePromptRules(rules: GenerationRule[], targetId: NarakaTargetId, labels: ConfirmedLayerLabel[]): GenerationRule[] {
-  const target = NARAKA_TARGETS[targetId];
+export function resolvePromptRules(rules: GenerationRule[], target: GenerationTarget, labels: ConfirmedLayerLabel[]): GenerationRule[] {
   return selectGenerationRules(rules, {
     layoutFamily: resolveLayoutFamily(target.width, target.height),
     aspectRatio: target.width / target.height,
@@ -212,12 +191,11 @@ export function resolvePromptRules(rules: GenerationRule[], targetId: NarakaTarg
   });
 }
 
-function buildPrompt(rules: GenerationRule[], sourceAsset: string, targetId: NarakaTargetId, labels: ConfirmedLayerLabel[], apiCanvas: ReturnType<typeof planApiCanvas>): { prompt: string; resolvedRules: GenerationRule[] } {
-  const target = NARAKA_TARGETS[targetId];
+function buildPrompt(rules: GenerationRule[], sourceAsset: string, target: GenerationTarget, labels: ConfirmedLayerLabel[], apiCanvas: ReturnType<typeof planApiCanvas>): { prompt: string; resolvedRules: GenerationRule[] } {
   const layoutFamily = resolveLayoutFamily(target.width, target.height);
   const suggestedTextRatio = layoutFamily === "landscape" && target.width / target.height > 3 ? suggestWideTextRatio(target.width, target.height) : null;
   const crop = planFinalCrop(target.width, target.height, apiCanvas);
-  const resolvedRules = resolvePromptRules(rules, targetId, labels);
+  const resolvedRules = resolvePromptRules(rules, target, labels);
   const inventory = labels.filter((layer) => layer.finalLabel !== "Ignore").map((layer) => `${layer.name}: ${layer.finalLabel}${layer.importance ? ` (${layer.importance}, ${layer.resizeBehavior ?? "preserve"})` : ""}`).join("; ");
   const prompt = [
     `Edit the supplied ${sourceAsset} key art into one production advertising candidate.`,
@@ -308,7 +286,7 @@ function safeError(err: unknown): { code: string; message: string; requestId: st
   return { code: "generation_error", message: String(err).slice(0, 500), requestId: null };
 }
 
-export async function generateNarakaCandidates(labels: ConfirmedLayerLabel[], targetIds: NarakaTargetId[], actor: string, sourceAsset: NarakaSourceId = "YJp813"): Promise<NarakaGenerationResult> {
+export async function generateNarakaCandidates(labels: ConfirmedLayerLabel[], targets: GenerationTarget[], actor: string, sourceAsset: NarakaSourceId = "YJp813"): Promise<NarakaGenerationResult> {
   const runId = randomUUID();
   if (!(sourceAsset in NARAKA_SOURCES)) throw new Error("Unsupported NARAKA source asset.");
   const rules = await loadGenerationRules();
@@ -323,16 +301,16 @@ export async function generateNarakaCandidates(labels: ConfirmedLayerLabel[], ta
   const blocked: BlockedGenerationTarget[] = [];
   const errors: string[] = [];
 
-  for (const targetId of targetIds) {
+  for (const target of targets) {
+    const targetId = target.id;
     const started = Date.now();
-    const target = NARAKA_TARGETS[targetId];
     const layoutFamily = resolveLayoutFamily(target.width, target.height);
     const extremeFamily = layoutFamily === "ultra_landscape" || layoutFamily === "ultra_portrait" ? layoutFamily : null;
     const useExtremeCompositor = requiresExtremeCompositor(target.width, target.height);
     const useWideProtectedOverlay = layoutFamily === "landscape" && target.width / target.height > 3;
     const suggestedTextRatio = useWideProtectedOverlay ? suggestWideTextRatio(target.width, target.height) : null;
     const finalizationMode = "crop" as const;
-    const preflight = validateGenerationFeasibility(targetId, labels);
+    const preflight = validateGenerationFeasibility(target, labels);
     if (preflight.status === "pass_to_designer") {
       blocked.push({ id: targetId, ...preflight });
       await logGenerationRun({ timestamp: new Date().toISOString(), runId, sourceAsset, targetSize: targetId, phase: "preflight", status: "pass_to_designer", model: "not_called", quality, promptVersion: NARAKA_PROMPT_VERSION, cacheKey: "not_created", requestId: null, processingTimeMs: Date.now() - started, apiCostUsd: 0, outputUri: null, errorCode: preflight.ruleCodes.join(","), errorMessage: preflight.reasons.join(" "), actor, labelSnapshotHash, usageJson: null });
@@ -374,7 +352,7 @@ export async function generateNarakaCandidates(labels: ConfirmedLayerLabel[], ta
       continue;
     }
     const apiCanvas = planApiCanvas(target.width, target.height);
-    const resolved = buildPrompt(rules, sourceAsset, targetId, labels, apiCanvas);
+    const resolved = buildPrompt(rules, sourceAsset, target, labels, apiCanvas);
     const resolvedRules = resolved.resolvedRules.map(toResolvedRule);
     const prompt = preflight.status === "ready_with_warnings"
       ? `${resolved.prompt}\n\n[preflight-review-warning] Attempt a candidate for human evaluation. Do not omit, crop, obstruct, or distort required objects to make the composition fit. Known risks: ${preflight.reasons.join(" ")}`
@@ -436,7 +414,7 @@ export async function generateNarakaCandidates(labels: ConfirmedLayerLabel[], ta
     }
   }
 
-  if (blocked.length === targetIds.length) return { runId, mode: "pass_to_designer", candidates, blocked, warning: null };
+  if (blocked.length === targets.length) return { runId, mode: "pass_to_designer", candidates, blocked, warning: null };
   const fallbackCount = candidates.filter((candidate) => candidate.status === "deterministic_fallback").length;
   const cacheCount = candidates.filter((candidate) => candidate.status === "cache_hit").length;
   const mode = fallbackCount === candidates.length ? "deterministic_fallback" : cacheCount === candidates.length ? "cache" : fallbackCount > 0 ? "mixed" : "openai";
@@ -445,7 +423,7 @@ export async function generateNarakaCandidates(labels: ConfirmedLayerLabel[], ta
 
 export async function generateDriveCandidate(params: {
   labels: ConfirmedLayerLabel[];
-  targetId: NarakaTargetId;
+  target: GenerationTarget;
   actor: string;
   sourceName: string;
   source: Buffer;
@@ -453,10 +431,10 @@ export async function generateDriveCandidate(params: {
   externalProcessingConsent: true;
 }): Promise<NarakaGenerationResult> {
   if (params.externalProcessingConsent !== true) throw new Error("Explicit consent is required before sending a Drive source to OpenAI Image Edit.");
-  const { labels, targetId, actor, sourceName, source, recipe } = params;
+  const { labels, target, actor, sourceName, source, recipe } = params;
+  const targetId = target.id;
   const runId = randomUUID();
   const started = Date.now();
-  const target = NARAKA_TARGETS[targetId];
   const ratio = Math.max(target.width / target.height, target.height / target.width);
   const requestedQuality = (process.env.OPENAI_IMAGE_QUALITY?.trim() || "low") as ImageQuality;
   const quality = ALLOWED_QUALITIES.has(requestedQuality) ? requestedQuality : "low";
@@ -464,7 +442,7 @@ export async function generateDriveCandidate(params: {
   const model = ALLOWED_MODELS.has(requestedModel) ? requestedModel : DEFAULT_IMAGE_MODEL;
   const labelSnapshotHash = createLabelSnapshotHash(labels);
   const rules = await loadGenerationRules();
-  const preflight = validateGenerationFeasibility(targetId, labels);
+  const preflight = validateGenerationFeasibility(target, labels);
 
   if (preflight.status === "pass_to_designer" || ratio > 3) {
     const ruleCodes = preflight.status === "pass_to_designer" ? preflight.ruleCodes : ["drive_protected_layers_required"];
@@ -477,7 +455,7 @@ export async function generateDriveCandidate(params: {
   const inventory = labels.filter((layer) => layer.finalLabel !== "Ignore").map((layer) => `${layer.name}: ${layer.finalLabel}${layer.importance ? ` (${layer.importance})` : ""}`).join("; ");
   const resolvedRules = [
     { slug: "general-recipe", statement: `${recipe.recipeName} (${recipe.versionId})`, why: null, layer: "global" },
-    ...resolvePromptRules(rules, targetId, labels).map(toResolvedRule),
+    ...resolvePromptRules(rules, target, labels).map(toResolvedRule),
   ];
   const prompt = [
     `Prompt recipe: ${recipe.recipeName} (${recipe.versionId}).`,

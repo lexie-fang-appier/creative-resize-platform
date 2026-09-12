@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import { createLabelSnapshotHash, planApiCanvas, planFinalCrop, resolveLayoutFamily, resolvePromptRules, validateGenerationFeasibility } from "../lib/naraka-generation";
 import { readFileSync } from "node:fs";
 import type { GenerationRule } from "../lib/recipe-rules";
+import type { GenerationTarget } from "../lib/specs";
 
 // The seed file is the same text the database is loaded from, so these assertions
 // run against the real rule set without needing a live database.
@@ -10,6 +11,24 @@ const RULES: GenerationRule[] = [...readFileSync("db/seed_recipe_rules_generatio
   .map((m) => ({ slug: m[1], statement: m[2].replace(/''/g, "'"), why: null, enforcement: m[4], layer: m[5] as GenerationRule["layer"], appliesTo: JSON.parse(m[3].replace(/''/g, "'")) }));
 
 const slugs = (rules: { slug: string }[]) => rules.map((rule) => rule.slug);
+
+// Targets come from spec_dimensions. The tests read the same seed file the
+// database is loaded from, so an assertion here cannot pass against a size the
+// specs no longer carry.
+const SEED = readFileSync("db/seed_rtb_banner_native.sql", "utf8");
+const TARGETS: Record<string, GenerationTarget> = Object.fromEntries(
+  [...SEED.matchAll(/\(\s*(banner|native)_spec_id,\s*(\d+),\s*(\d+),\s*'([a-z_]+)',\s*'([a-z_]+)'/g)].map((m) => {
+    const [, spec, w, h, deviceScope, mustHaveLevel] = m;
+    const id = `${w}x${h}`;
+    return [id, { id, width: Number(w), height: Number(h), placement: spec === "banner" ? "Banner" : "Native", deviceScope, mustHaveLevel }];
+  }),
+);
+const target = (id: string): GenerationTarget => {
+  const found = TARGETS[id];
+  if (!found) throw new Error(`${id} is not a seeded spec dimension`);
+  return found;
+};
+
 
 describe("NARAKA Image API canvas planning", () => {
   it("maps an extreme target to the Image API supported 3:1 boundary", () => {
@@ -34,7 +53,7 @@ describe("NARAKA Image API canvas planning", () => {
   });
 
   it("resolves portrait and detected-object rules deterministically", () => {
-    const rules = slugs(resolvePromptRules(RULES, "320x480", [
+    const rules = slugs(resolvePromptRules(RULES, target("640x960"), [
       { name: "Character", machineLabel: "Hero", finalLabel: "Hero", decision: "confirmed" },
       { name: "15+", machineLabel: "Compliance", finalLabel: "Compliance", decision: "confirmed" },
     ]));
@@ -45,26 +64,45 @@ describe("NARAKA Image API canvas planning", () => {
   });
 
   it("always resolves the complete compliance badge rule when compliance is present", () => {
-    const rules = slugs(resolvePromptRules(RULES, "300x250", [
+    const rules = slugs(resolvePromptRules(RULES, target("600x500"), [
       { name: "Age badge", machineLabel: "Compliance", finalLabel: "Compliance", decision: "confirmed", importance: "required" },
     ]));
     expect(rules).toContain("keep-compliance-in-source-corner");
   });
 
-  it("allows an extreme 320x50 composition as a warned experiment", () => {
-    const result = validateGenerationFeasibility("320x50", [
-      { name: "Character", machineLabel: "Hero", finalLabel: "Hero", decision: "confirmed", importance: "required" },
-      { name: "Headline", machineLabel: "Headline", finalLabel: "Headline", decision: "confirmed", importance: "required" },
-      { name: "Logo", machineLabel: "Brand logo", finalLabel: "Brand logo", decision: "confirmed", importance: "required" },
-      { name: "15+", machineLabel: "Compliance", finalLabel: "Compliance", decision: "confirmed", importance: "required" },
-    ]);
+  const CROWDED = [
+    { name: "Character", machineLabel: "Hero", finalLabel: "Hero", decision: "confirmed", importance: "required" as const },
+    { name: "Headline", machineLabel: "Headline", finalLabel: "Headline", decision: "confirmed", importance: "required" as const },
+    { name: "Logo", machineLabel: "Brand logo", finalLabel: "Brand logo", decision: "confirmed", importance: "required" as const },
+    { name: "15+", machineLabel: "Compliance", finalLabel: "Compliance", decision: "confirmed", importance: "required" as const },
+  ];
+
+  it("warns rather than blocks when an extreme banner cannot hold everything required", () => {
+    const result = validateGenerationFeasibility(target("640x100"), CROWDED);
     expect(result.status).toBe("ready_with_warnings");
-    expect(result.ruleCodes).toContain("insufficient_short_edge");
     expect(result.ruleCodes).toContain("required_object_capacity_conflict");
   });
 
+  it("warns when the short edge cannot keep the required foreground legible", () => {
+    // No seeded spec has a short edge under 64px, so this exercises the rule
+    // against a hypothetical dimension rather than pretending one is shipped.
+    const result = validateGenerationFeasibility(
+      { id: "320x50", width: 320, height: 50, placement: "Banner", deviceScope: "mobile_only", mustHaveLevel: "required" },
+      CROWDED,
+    );
+    expect(result.ruleCodes).toContain("insufficient_short_edge");
+  });
+
+  it("flags a provisional spec dimension without blocking it", () => {
+    const result = validateGenerationFeasibility(target("960x640"), [
+      { name: "Character", machineLabel: "Hero", finalLabel: "Hero", decision: "confirmed", importance: "required" },
+    ]);
+    expect(result.status).toBe("ready_with_warnings");
+    expect(result.ruleCodes).toContain("pending_spec_confirmation");
+  });
+
   it("allows a standard portrait composition to proceed", () => {
-    const result = validateGenerationFeasibility("320x480", [
+    const result = validateGenerationFeasibility(target("640x960"), [
       { name: "Character", machineLabel: "Hero", finalLabel: "Hero", decision: "confirmed", importance: "required" },
       { name: "Headline", machineLabel: "Headline", finalLabel: "Headline", decision: "confirmed", importance: "required" },
       { name: "Logo", machineLabel: "Brand logo", finalLabel: "Brand logo", decision: "confirmed", importance: "required" },
@@ -73,7 +111,7 @@ describe("NARAKA Image API canvas planning", () => {
   });
 
   it("requires a dedicated App icon source for the Native 160x160 target", () => {
-    const result = validateGenerationFeasibility("160x160", [
+    const result = validateGenerationFeasibility(target("160x160"), [
       { name: "Wordmark", machineLabel: "Brand logo", finalLabel: "Brand logo", decision: "confirmed", importance: "required" },
     ]);
     expect(result.status).toBe("pass_to_designer");
@@ -81,7 +119,7 @@ describe("NARAKA Image API canvas planning", () => {
   });
 
   it("allows the provisional 960x640 target as a review-only experiment", () => {
-    const result = validateGenerationFeasibility("960x640", [
+    const result = validateGenerationFeasibility(target("960x640"), [
       { name: "Hero", machineLabel: "Hero", finalLabel: "Hero", decision: "confirmed", importance: "required" },
     ]);
     expect(result.status).toBe("ready_with_warnings");
@@ -110,14 +148,14 @@ describe("NARAKA Image API canvas planning", () => {
   });
 
   it("adds zone and optional-first rules for extreme ratios", () => {
-    expect(slugs(resolvePromptRules(RULES, "1456x180", []))).toContain("ultra-landscape-zones");
-    expect(slugs(resolvePromptRules(RULES, "320x1200", []))).toContain("ultra-portrait-zones");
-    expect(slugs(resolvePromptRules(RULES, "320x1200", []))).toContain("optional-elements-omit-first");
+    expect(slugs(resolvePromptRules(RULES, target("1456x180"), []))).toContain("ultra-landscape-zones");
+    expect(slugs(resolvePromptRules(RULES, target("320x1200"), []))).toContain("ultra-portrait-zones");
+    expect(slugs(resolvePromptRules(RULES, target("320x1200"), []))).toContain("optional-elements-omit-first");
   });
 
   it("protects the final crop band for 3:1 to 4:1 landscape targets", () => {
-    expect(slugs(resolvePromptRules(RULES, "1940x500", []))).toContain("wide-landscape-crop-safe-band");
-    expect(slugs(resolvePromptRules(RULES, "640x200", []))).toContain("wide-landscape-crop-safe-band");
-    expect(slugs(resolvePromptRules(RULES, "1200x627", []))).not.toContain("wide-landscape-crop-safe-band");
+    expect(slugs(resolvePromptRules(RULES, target("1940x500"), []))).toContain("wide-landscape-crop-safe-band");
+    expect(slugs(resolvePromptRules(RULES, target("640x200"), []))).toContain("wide-landscape-crop-safe-band");
+    expect(slugs(resolvePromptRules(RULES, target("1200x627"), []))).not.toContain("wide-landscape-crop-safe-band");
   });
 });

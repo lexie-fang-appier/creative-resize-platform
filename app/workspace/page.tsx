@@ -45,24 +45,9 @@ type Target = {
   tone: Tone;
 };
 
-const TARGETS: Target[] = [
-  { id: "1920x1080", size: "1920 × 1080", width: 1920, height: 1080, placement: "Original source", state: "Covered", route: "ready_to_use", src: "/examples/naraka/YJp814-1920x1080.png", qa: "Source confirmed", tone: "green" },
-  { id: "600x500", size: "600 × 500", width: 600, height: 500, placement: "RTB Banner · PC + Mobile", state: "Gap", route: "preflight_required", src: "/examples/naraka/YJp814-1920x1080.png", qa: "Required", tone: "violet" },
-  { id: "1456x180", size: "1456 × 180", width: 1456, height: 180, placement: "RTB Banner · PC + Mobile", state: "Gap", route: "preflight_required", src: "/examples/naraka/YJp814-1920x1080.png", qa: "Required", tone: "violet" },
-  { id: "672x560", size: "672 × 560", width: 672, height: 560, placement: "RTB Banner · PC + Mobile", state: "Gap", route: "preflight_required", src: "/examples/naraka/YJp814-1920x1080.png", qa: "Required", tone: "violet" },
-  { id: "640x100", size: "640 × 100", width: 640, height: 100, placement: "RTB Banner · Mobile only", state: "Gap", route: "preflight_required", src: "/examples/naraka/YJp814-1920x1080.png", qa: "Required", tone: "violet" },
-  { id: "640x960", size: "640 × 960", width: 640, height: 960, placement: "RTB Banner · Mobile only", state: "Gap", route: "preflight_required", src: "/examples/naraka/YJp814-1920x1080.png", qa: "Required", tone: "violet" },
-  { id: "500x500", size: "500 × 500", width: 500, height: 500, placement: "RTB Banner · Mobile only", state: "Gap", route: "preflight_required", src: "/examples/naraka/YJp814-1920x1080.png", qa: "Required", tone: "violet" },
-  { id: "640x200", size: "640 × 200", width: 640, height: 200, placement: "RTB Banner · Mobile only", state: "Gap", route: "preflight_required", src: "/examples/naraka/YJp814-1920x1080.png", qa: "Required", tone: "violet" },
-  { id: "600x1200", size: "600 × 1200", width: 600, height: 1200, placement: "RTB Banner · PC only", state: "Gap", route: "preflight_required", src: "/examples/naraka/YJp814-1920x1080.png", qa: "Required", tone: "violet" },
-  { id: "320x1200", size: "320 × 1200", width: 320, height: 1200, placement: "RTB Banner · PC only", state: "Gap", route: "preflight_required", src: "/examples/naraka/YJp814-1920x1080.png", qa: "Required", tone: "violet" },
-  { id: "1940x500", size: "1940 × 500", width: 1940, height: 500, placement: "RTB Banner · PC only", state: "Gap", route: "preflight_required", src: "/examples/naraka/YJp814-1920x1080.png", qa: "Required", tone: "violet" },
-  { id: "1200x627", size: "1200 × 627", width: 1200, height: 627, placement: "RTB Native · Main image", state: "Gap", route: "preflight_required", src: "/examples/naraka/YJp814-1920x1080.png", qa: "Required", tone: "violet" },
-  { id: "160x160", size: "160 × 160", width: 160, height: 160, placement: "RTB Native · App icon", state: "Gap", route: "separate_asset_check", src: "/examples/naraka/YJp814-1920x1080.png", qa: "Required", tone: "violet" },
-  { id: "960x640", size: "960 × 640", width: 960, height: 640, placement: "RTB Banner · Device scope pending", state: "Pending spec", route: "pending_spec_confirmation", src: "/examples/naraka/YJp814-1920x1080.png", qa: "Provisional", tone: "amber" },
-];
-
-const INITIAL_SELECTION = ["1940x500"];
+// The default preview size, only used to pick one of the fetched targets.
+const PREFERRED_FIRST_TARGET = "1940x500";
+const SOURCE_PREVIEW_SRC = "/examples/naraka/YJp814-1920x1080.png";
 const SOURCE_ASSET = "YJp814";
 const DEFAULT_MODEL = "gpt-image-2.5-sunburst";
 const DEFAULT_QUALITY = "low";
@@ -88,7 +73,7 @@ export default function WorkspacePreviewPage() {
   const [labelsConfirmed, setLabelsConfirmed] = useState(false);
   const [draftSelection, setDraftSelection] = useState<string[]>([]);
   const [appliedSelection, setAppliedSelection] = useState<string[]>([]);
-  const [selectedPreviewId, setSelectedPreviewId] = useState(INITIAL_SELECTION[0]);
+  const [selectedPreviewId, setSelectedPreviewId] = useState("");
   const [compareSource, setCompareSource] = useState(true);
   const [adjustmentMode, setAdjustmentMode] = useState(false);
   const [adjustment, setAdjustment] = useState({ x: 0, y: 0, scale: 100 });
@@ -112,10 +97,12 @@ export default function WorkspacePreviewPage() {
   const [runComplete, setRunComplete] = useState(false);
   const [notice, setNotice] = useState("Interactive prototype · changes stay in this browser session");
   const [driveContext, setDriveContext] = useState<DriveWorkspaceContext | null>(null);
+  const [targets, setTargets] = useState<Target[]>([]);
   const [externalProcessingConsent, setExternalProcessingConsent] = useState(false);
 
   const selectedLayer = sourceLayers.find((layer) => layer.z === selectedLayerZ) ?? sourceLayers[0];
-  const appliedTargets = useMemo(() => TARGETS.filter((target) => appliedSelection.includes(target.id)), [appliedSelection]);
+  const defaultTargetId = targets.find((target) => target.id === PREFERRED_FIRST_TARGET)?.id ?? targets[0]?.id;
+  const appliedTargets = useMemo(() => targets.filter((target) => appliedSelection.includes(target.id)), [targets, appliedSelection]);
   const selectedPreview = appliedTargets.find((target) => target.id === selectedPreviewId) ?? appliedTargets[0];
   const sourceTarget: Target = driveContext ? {
     id: `source-${driveContext.asset.id}`,
@@ -128,7 +115,18 @@ export default function WorkspacePreviewPage() {
     src: driveContext.asset.previewUrl,
     qa: "Source selected",
     tone: "green",
-  } : TARGETS[0];
+  } : {
+    id: "source",
+    size: "1920 × 1080",
+    width: 1920,
+    height: 1080,
+    placement: "Original source",
+    state: "Covered",
+    route: "ready_to_use",
+    src: SOURCE_PREVIEW_SRC,
+    qa: "Source confirmed",
+    tone: "green",
+  };
   const sourceAssetLabel = driveContext?.asset.filename ?? SOURCE_ASSET;
   const displayTarget = selectedPreview && !compareSource ? selectedPreview : sourceTarget;
   const displayPreview = displayTarget ? { ...displayTarget, src: generatedSources[displayTarget.id] ?? displayTarget.src } : undefined;
@@ -136,7 +134,7 @@ export default function WorkspacePreviewPage() {
   const allCandidatesReviewed = appliedTargets.length > 0 && reviewedCandidateCount === appliedTargets.length;
   const adoptedCount = appliedTargets.filter((target) => candidateDecisions[target.id] === "adopted").length;
   const adoptedTargets = appliedTargets.filter((target) => candidateDecisions[target.id] === "adopted");
-  const activeTarget = TARGETS.find((target) => target.id === draftSelection[0]);
+  const activeTarget = targets.find((target) => target.id === draftSelection[0]);
   const selectedPrompt = selectedPreview ? candidatePrompts[selectedPreview.id] : undefined;
   const selectedModel = selectedPreview ? candidateModels[selectedPreview.id] : DEFAULT_MODEL;
   const selectedQuality = selectedPreview ? candidateQualities[selectedPreview.id] : DEFAULT_QUALITY;
@@ -153,6 +151,17 @@ export default function WorkspacePreviewPage() {
     return () => window.clearInterval(timer);
   }, [generation, generationStartedAt]);
 
+  // Target sizes are spec data, so they are fetched rather than declared here.
+  useEffect(() => {
+    fetch("/api/workspace/targets")
+      .then(async (response) => {
+        const payload = await response.json() as { targets?: Omit<Target, "src">[]; error?: string };
+        if (!response.ok || !payload.targets) throw new Error(payload.error ?? "Target sizes could not be loaded.");
+        setTargets(payload.targets.map((target) => ({ ...target, src: SOURCE_PREVIEW_SRC })));
+      })
+      .catch((error) => setNotice(error instanceof Error ? error.message : "Target sizes could not be loaded."));
+  }, []);
+
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
     const jobId = params.get("jobId");
@@ -163,6 +172,7 @@ export default function WorkspacePreviewPage() {
         const payload = await response.json() as DriveWorkspaceContext & { error?: string };
         if (!response.ok) throw new Error(payload.error ?? "Workspace context could not be loaded.");
         setDriveContext(payload);
+        setTargets((current) => current.map((target) => ({ ...target, src: payload.asset.previewUrl })));
         setNotice(`${payload.asset.filename} loaded from Drive · ${payload.prompt.recipeName}`);
       })
       .catch((error) => setNotice(error instanceof Error ? error.message : "Workspace context could not be loaded."));
@@ -177,7 +187,7 @@ export default function WorkspacePreviewPage() {
   ];
 
   function toggleTarget(id: string) {
-    if (!labelsConfirmed || generation === "running" || TARGETS.find((target) => target.id === id)?.state === "Covered") return;
+    if (!labelsConfirmed || generation === "running") return;
     setDraftSelection((current) => current[0] === id ? [] : [id]);
   }
 
@@ -226,7 +236,7 @@ export default function WorkspacePreviewPage() {
       decision: layer.decision === "ignored" ? "ignored" : layer.finalLabel === layer.machineLabel ? "confirmed" : "corrected",
     })));
     setLabelsConfirmed(true);
-    setDraftSelection([INITIAL_SELECTION[0]]);
+    setDraftSelection(defaultTargetId ? [defaultTargetId] : []);
     setNotice(`${sourceLayers.length} object labels confirmed · gap sizes unlocked`);
   }
 
@@ -265,7 +275,7 @@ export default function WorkspacePreviewPage() {
     setGeneration("running");
     setGenerationStartedAt(Date.now());
     setElapsedSeconds(0);
-    setNotice(`Generating ${TARGETS.find((target) => target.id === targetId)?.size} from the confirmed label snapshot…`);
+    setNotice(`Generating ${targets.find((target) => target.id === targetId)?.size} from the confirmed label snapshot…`);
     try {
       const response = await fetch("/api/workspace/generate", {
         method: "POST",
@@ -363,7 +373,7 @@ export default function WorkspacePreviewPage() {
     setLabelsConfirmed(false);
     setDraftSelection([]);
     setAppliedSelection([]);
-    setSelectedPreviewId(INITIAL_SELECTION[0]);
+    setSelectedPreviewId(defaultTargetId ?? "");
     setCompareSource(true);
     setAdjustmentMode(false);
     setVersion("original");
@@ -526,7 +536,7 @@ export default function WorkspacePreviewPage() {
                   </tr>
                 </thead>
                 <tbody>
-                  {TARGETS.map((target) => {
+                  {targets.map((target) => {
                     const selected = draftSelection.includes(target.id);
                     return (
                       <tr key={target.id} onClick={() => toggleTarget(target.id)} className={`border-t border-slate-100 transition ${labelsConfirmed && generation !== "running" && target.state !== "Covered" ? "cursor-pointer hover:bg-slate-50" : "cursor-not-allowed opacity-45"} ${selected ? "bg-violet-50/50" : ""}`}>
@@ -603,7 +613,7 @@ export default function WorkspacePreviewPage() {
                 ))}
                 <button type="button" onClick={() => setAdjustment({ x: 0, y: 0, scale: 100 })} className="rounded-lg border border-violet-200 bg-white px-3 py-2 text-xs font-semibold text-violet-700 hover:border-violet-400">Reset</button>
                 <p className="md:col-span-4 text-[10px] leading-4 text-violet-700">
-                  Editing <strong>{selectedLayer.name}</strong> ({selectedLayer.finalLabel}) on <strong>{TARGETS.find((target) => target.id === selectedPreviewId)?.size}</strong>. This prototype moves the detected object boundary overlay; real pixel movement requires extracted PSD layers.
+                  Editing <strong>{selectedLayer.name}</strong> ({selectedLayer.finalLabel}) on <strong>{targets.find((target) => target.id === selectedPreviewId)?.size}</strong>. This prototype moves the detected object boundary overlay; real pixel movement requires extracted PSD layers.
                 </p>
               </div>
             )}

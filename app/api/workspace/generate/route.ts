@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
-import { generateDriveCandidate, generateNarakaCandidates, NARAKA_TARGETS, type ConfirmedLayerLabel, type NarakaTargetId } from "@/lib/naraka-generation";
+import { generateDriveCandidate, generateNarakaCandidates, type ConfirmedLayerLabel } from "@/lib/naraka-generation";
+import { listGenerationTargets } from "@/lib/specs";
 import { NARAKA_SOURCES, type NarakaSourceId } from "@/lib/creative-analysis";
 import { getAsset } from "@/lib/assets";
 import { getAssetPreview } from "@/lib/asset-preview";
@@ -48,8 +49,9 @@ export async function POST(request: Request) {
   if (!body.labelsConfirmed) return NextResponse.json({ error: "Layer labels must be confirmed before generation." }, { status: 409 });
   if (!Array.isArray(body.layerLabels) || !isValidSnapshot(body.layerLabels)) return NextResponse.json({ error: "A valid confirmed object snapshot is required." }, { status: 400 });
   const requestedTargets = [...new Set(body.targetIds ?? [])];
-  const targetIds = requestedTargets.filter((id): id is NarakaTargetId => id in NARAKA_TARGETS);
-  if (targetIds.length !== 1 || targetIds.length !== requestedTargets.length) return NextResponse.json({ error: "Select exactly one valid target size per experiment." }, { status: 400 });
+  const known = await listGenerationTargets();
+  const targets = requestedTargets.map((id) => known.find((target) => target.id === id)).filter((target) => target !== undefined);
+  if (targets.length !== 1 || targets.length !== requestedTargets.length) return NextResponse.json({ error: "Select exactly one valid target size per experiment." }, { status: 400 });
 
   try {
     if (body.jobId && body.assetId) {
@@ -59,10 +61,10 @@ export async function POST(request: Request) {
       const preview = await getAssetPreview(asset);
       if (!preview.ok) return NextResponse.json({ error: preview.reason }, { status: 422 });
       const recipe = await resolvePromptRecipe(job.clientIndustry, job.creativeFormat);
-      return NextResponse.json(await generateDriveCandidate({ labels: body.layerLabels, targetId: targetIds[0], actor, sourceName: asset.filename, source: preview.buffer, recipe, externalProcessingConsent: true }));
+      return NextResponse.json(await generateDriveCandidate({ labels: body.layerLabels, target: targets[0], actor, sourceName: asset.filename, source: preview.buffer, recipe, externalProcessingConsent: true }));
     }
     if (!body.sourceAsset || !(body.sourceAsset in NARAKA_SOURCES)) return NextResponse.json({ error: "A valid source asset is required." }, { status: 400 });
-    return NextResponse.json(await generateNarakaCandidates(body.layerLabels, targetIds, actor, body.sourceAsset as NarakaSourceId));
+    return NextResponse.json(await generateNarakaCandidates(body.layerLabels, targets, actor, body.sourceAsset as NarakaSourceId));
   } catch (err) {
     return NextResponse.json({ error: err instanceof Error ? err.message : "Generation failed." }, { status: 500 });
   }

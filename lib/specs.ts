@@ -89,3 +89,32 @@ export async function getSpecDimensionsForSpecVersion(specVersionId: string): Pr
     [specVersionId],
   );
 }
+
+export interface GenerationTarget {
+  id: string;
+  width: number;
+  height: number;
+  placement: string;
+  deviceScope: string;
+  mustHaveLevel: string;
+}
+
+/** Every size the generation pipeline may be asked for, straight from the spec
+ * tables. There is deliberately no TypeScript copy of this list: the one that
+ * existed drifted from the seeded specs and nothing would have said so. A size
+ * that is not in any spec_version is not a deliverable, so adding one means
+ * adding a spec row (see CLAUDE.md), not an entry in a constant. */
+export async function listGenerationTargets(): Promise<GenerationTarget[]> {
+  return query<GenerationTarget>(
+    `select sd.width || 'x' || sd.height as id, sd.width, sd.height,
+            sv.placement, sd.device_scope as "deviceScope", sd.must_have_level as "mustHaveLevel"
+       from spec_dimensions sd
+       join spec_versions sv on sv.id = sd.spec_version_id
+      order by sv.placement, sd.width, sd.height`,
+  );
+}
+
+export async function findGenerationTarget(id: string): Promise<GenerationTarget | null> {
+  const targets = await listGenerationTargets();
+  return targets.find((target) => target.id === id) ?? null;
+}
