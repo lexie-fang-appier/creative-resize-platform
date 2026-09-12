@@ -304,6 +304,18 @@ async function finalizeImage(input: Buffer, outputPath: string, width: number, h
   }
 }
 
+/** Existence check only. Kept separate from logging on purpose: when the two
+ * shared one try block, a throwing log made a cache HIT look like a cache miss
+ * and the run paid for the image again. */
+async function fileExists(filePath: string): Promise<boolean> {
+  try {
+    await fs.access(filePath);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 function safeError(err: unknown): { code: string; message: string; requestId: string | null } {
   if (err instanceof ImageApiError) return { code: err.code, message: err.message.slice(0, 500), requestId: err.requestId };
   if (err instanceof Error) return { code: "generation_error", message: err.message.slice(0, 500), requestId: null };
@@ -376,13 +388,11 @@ export async function generateNarakaCandidates(labels: ConfirmedLayerLabel[], ta
     const fallbackOutputPath = path.join(process.cwd(), "outputs", "naraka-mvp", fallbackFilename);
     const fallbackOutputUri = `/api/workspace/outputs/${fallbackFilename}`;
 
-    try {
-      await fs.access(outputPath);
+    // A cache miss is expected and is not logged as an error.
+    if (await fileExists(outputPath)) {
       candidates.push({ id: targetId, src: outputUri, status: "cache_hit", model, quality, promptVersion: NARAKA_PROMPT_VERSION, prompt, resolvedRules, preflightWarnings: preflight.reasons, suggestedTextRatio, requestId: null });
       await logGenerationRun({ timestamp: new Date().toISOString(), runId, sourceAsset, targetSize: targetId, phase: "generation", status: "cache_hit", model, quality, promptVersion: NARAKA_PROMPT_VERSION, cacheKey, requestId: null, processingTimeMs: Date.now() - started, apiCostUsd: null, outputUri, errorCode: null, errorMessage: null, actor, labelSnapshotHash, usageJson: null });
       continue;
-    } catch {
-      // Cache miss is expected and is not logged as an error.
     }
 
     try {
@@ -481,11 +491,9 @@ export async function generateDriveCandidate(params: {
   const outputPath = path.join(process.cwd(), "outputs", "naraka-mvp", filename);
   const outputUri = `/api/workspace/outputs/${filename}`;
 
-  try {
-    await fs.access(outputPath);
+  // Cache miss: the consented API call below is the only paid path.
+  if (await fileExists(outputPath)) {
     return { runId, mode: "cache", candidates: [{ id: targetId, src: outputUri, status: "cache_hit", model, quality, promptVersion: recipe.versionId, prompt, resolvedRules, preflightWarnings: preflight.reasons, suggestedTextRatio: null, requestId: null }], blocked: [], warning: null };
-  } catch {
-    // Cache miss: the consented API call below is the only paid path.
   }
 
   try {
