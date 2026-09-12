@@ -8,6 +8,23 @@ from pathlib import Path
 from PIL import Image
 
 
+# Which roles each family can actually place. A role absent here has no zone in
+# that layout: optional layers are omitted and reported, required ones stop the
+# run so the target routes to the Designer instead of shipping without them.
+# Queryable with --describe so the preflight check cannot drift from the geometry.
+WIDE_OVERLAY_ROLES = frozenset({"Brand logo", "Headline", "Supporting copy", "CTA", "Platform marks", "Compliance", "Supporting visual"})
+MODEL_PAINTED_ROLES = frozenset({"Hero", "Background", "Decorative"})
+
+
+def family_roles(family: str) -> frozenset[str]:
+    if family == "wide_landscape":
+        return WIDE_OVERLAY_ROLES
+    return frozenset(boxes(1000, 1000, family))
+
+
+FAMILIES = ("ultra_landscape", "ultra_portrait", "wide_landscape")
+
+
 def fit_layer(image: Image.Image, box: tuple[int, int, int, int], fixed_scale: float | None = None) -> tuple[Image.Image, tuple[int, int]]:
     x, y, width, height = box
     scale = fixed_scale if fixed_scale is not None else min(width / image.width, height / image.height)
@@ -55,17 +72,28 @@ def overlaps(first: tuple[int, int, int, int], second: tuple[int, int, int, int]
     return ax < bx + bw and ax + aw > bx and ay < by + bh and ay + ah > by
 
 
-def compose_wide_landscape(canvas: Image.Image, manifest: dict, layer_root: Path, width: int, height: int, suggested_text_ratio: float | None) -> tuple[list[dict], float]:
+def compose_wide_landscape(canvas: Image.Image, manifest: dict, layer_root: Path, width: int, height: int, suggested_text_ratio: float | None) -> tuple[list[dict], float, list[dict]]:
     by_role: dict[str, list[tuple[dict, Image.Image]]] = {}
-    allowed = {"Brand logo", "Headline", "Supporting copy", "CTA", "Platform marks", "Compliance", "Supporting visual"}
+    omitted: list[dict] = []
     for layer in sorted(manifest["layers"], key=lambda item: item["z"]):
-        if layer["role"] not in allowed:
+        role = layer["role"]
+        if role not in WIDE_OVERLAY_ROLES:
+            # The model paints the scene, so hero/background/ornament are already
+            # in the plate and must not be composited on top of themselves.
+            # Anything else that is required has nowhere to go: say so.
+            if role not in MODEL_PAINTED_ROLES and layer.get("required"):
+                raise SystemExit(
+                    f"wide layout has no overlay slot for required role {role!r} "
+                    f"(layer {layer['id']!r})"
+                )
+            omitted.append({"id": layer["id"], "role": role,
+                            "reason": "painted_by_model" if role in MODEL_PAINTED_ROLES else "no_slot_in_layout"})
             continue
         with Image.open(layer_root / layer["file"]) as source:
             visible = trim_transparent(source.convert("RGBA"))
-        by_role.setdefault(layer["role"], []).append((layer, visible))
+        by_role.setdefault(role, []).append((layer, visible))
 
-    required_roles = sorted({layer["role"] for layer in manifest["layers"] if layer.get("required") and layer["role"] in allowed})
+    required_roles = sorted({layer["role"] for layer in manifest["layers"] if layer.get("required") and layer["role"] in WIDE_OVERLAY_ROLES})
     missing = [role for role in required_roles if not by_role.get(role)]
     if missing:
         raise SystemExit(f"wide layout is missing protected layers: {', '.join(missing)}")
@@ -188,16 +216,21 @@ def compose_wide_landscape(canvas: Image.Image, manifest: dict, layer_root: Path
         compliance_scale = min(height * 0.12 / compliance[1].height, width * 0.05 / compliance[1].width)
         compliance_image = scaled(compliance[1], compliance_scale)
         paste(compliance[0], compliance[1], width - margin - compliance_image.width, height - margin - compliance_image.height, compliance_scale)
-    return placed, shared_text_scale
+    return placed, shared_text_scale, omitted
 
 
 def main() -> None:
+    if len(sys.argv) == 2 and sys.argv[1] == "--describe":
+        print(json.dumps({"families": {f: sorted(family_roles(f)) for f in FAMILIES},
+                          "modelPainted": sorted(MODEL_PAINTED_ROLES)}))
+        return
     if len(sys.argv) not in (7, 8):
-        raise SystemExit("usage: compose_extreme_layout.py BACKGROUND MANIFEST OUTPUT WIDTH HEIGHT FAMILY [SUGGESTED_TEXT_RATIO]")
+        raise SystemExit("usage: compose_extreme_layout.py BACKGROUND MANIFEST OUTPUT WIDTH HEIGHT FAMILY [SUGGESTED_TEXT_RATIO]\n"
+                         "       compose_extreme_layout.py --describe")
     background_path, manifest_path, output_path = map(Path, sys.argv[1:4])
     width, height, family = int(sys.argv[4]), int(sys.argv[5]), sys.argv[6]
     suggested_text_ratio = float(sys.argv[7]) if len(sys.argv) == 8 else None
-    if family not in ("ultra_landscape", "ultra_portrait", "wide_landscape"):
+    if family not in FAMILIES:
         raise SystemExit(f"unsupported family: {family}")
 
     manifest = json.loads(manifest_path.read_text())
@@ -208,24 +241,27 @@ def main() -> None:
             raise SystemExit(f"background must already be {width}x{height}, got {canvas.size}")
 
     if family == "wide_landscape":
-        placed, shared_text_scale = compose_wide_landscape(canvas, manifest, layer_root, width, height, suggested_text_ratio)
+        placed, shared_text_scale, omitted = compose_wide_landscape(canvas, manifest, layer_root, width, height, suggested_text_ratio)
         Path(output_path).parent.mkdir(parents=True, exist_ok=True)
         canvas.convert("RGB").save(output_path, "PNG", optimize=True)
-        print(json.dumps({"ok": True, "family": family, "suggested_text_ratio": suggested_text_ratio, "shared_text_scale": shared_text_scale, "placed": placed}))
+        print(json.dumps({"ok": True, "family": family, "suggested_text_ratio": suggested_text_ratio, "shared_text_scale": shared_text_scale, "placed": placed, "omitted": omitted}))
         return
 
     role_boxes = boxes(width, height, family)
-    supporting_slots = []
-    supporting_index = 0
     prepared = []
+    omitted: list[dict] = []
     for layer in sorted(manifest["layers"], key=lambda item: item["z"]):
         role = layer["role"]
-        if role == "Supporting visual" and supporting_index < len(supporting_slots):
-            box = supporting_slots[supporting_index]
-            supporting_index += 1
-        elif role in role_boxes:
-            box = role_boxes[role]
-        else:
+        box = role_boxes.get(role)
+        if box is None:
+            # Previously this branch was reached silently, and a required
+            # Platform marks layer simply vanished with every gate still green.
+            if layer.get("required"):
+                raise SystemExit(
+                    f"{family} has no zone for required role {role!r} "
+                    f"(layer {layer['id']!r}); add a zone or route this target to the Designer"
+                )
+            omitted.append({"id": layer["id"], "role": role, "reason": "no_zone_in_family"})
             continue
         asset_path = layer_root / layer["file"]
         with Image.open(asset_path) as source:
@@ -256,7 +292,7 @@ def main() -> None:
 
     Path(output_path).parent.mkdir(parents=True, exist_ok=True)
     canvas.convert("RGB").save(output_path, "PNG", optimize=True)
-    print(json.dumps({"ok": True, "family": family, "suggested_text_ratio": suggested_text_ratio, "shared_text_scale": shared_text_scale, "placed": placed}))
+    print(json.dumps({"ok": True, "family": family, "suggested_text_ratio": suggested_text_ratio, "shared_text_scale": shared_text_scale, "placed": placed, "omitted": omitted}))
 
 
 if __name__ == "__main__":

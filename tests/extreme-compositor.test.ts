@@ -1,5 +1,7 @@
+import { execFileSync } from "node:child_process";
+import path from "node:path";
 import { describe, expect, it } from "vitest";
-import { buildExtremeBackgroundPrompt, buildWideBasePrompt, missingExtremeRoles, missingWideOverlayRoles, requiresExtremeCompositor, suggestWideTextRatio, type ExtremeLayerManifest } from "../lib/extreme-compositor";
+import { buildExtremeBackgroundPrompt, buildWideBasePrompt, COMPOSITOR_ZONE_ROLES, missingExtremeRoles, missingWideOverlayRoles, requiresExtremeCompositor, suggestWideTextRatio, unplaceableRequiredRoles, type CompositorFamily, type ExtremeLayerManifest } from "../lib/extreme-compositor";
 
 const manifest: ExtremeLayerManifest = {
   sourceAsset: "YJp810",
@@ -75,5 +77,44 @@ describe("extreme-ratio compositor routing", () => {
     expect(suggestWideTextRatio(1940, 500)).toBe(0.361);
     expect(suggestWideTextRatio(970, 250)).toBe(0.326);
     expect(suggestWideTextRatio(640, 200)).toBe(0.315);
+  });
+});
+
+describe("compositor zone tables", () => {
+  // The TypeScript copy exists so preflight can refuse a target before paying
+  // for a plate. It is only safe while it matches the geometry it mirrors, so
+  // this reads the script's own answer rather than a second hand-written list.
+  const described = JSON.parse(
+    execFileSync("python3", [path.join(process.cwd(), "scripts", "compose_extreme_layout.py"), "--describe"], { encoding: "utf8" }),
+  ) as { families: Record<string, string[]>; modelPainted: string[] };
+
+  it.each(Object.keys(COMPOSITOR_ZONE_ROLES))("matches compose_extreme_layout.py for %s", (family) => {
+    expect([...COMPOSITOR_ZONE_ROLES[family as CompositorFamily]].sort()).toEqual(described.families[family]);
+  });
+
+  it("blocks a required role that has no zone in the family", () => {
+    const manifest = {
+      sourceAsset: "YJp810" as const,
+      sourceWidth: 1080,
+      sourceHeight: 1350,
+      layers: [
+        { id: "platform-marks", role: "Platform marks" as const, file: "platform-marks.png", required: true, z: 43 },
+        { id: "brand-logo", role: "Brand logo" as const, file: "brand-logo.png", required: true, z: 30 },
+      ],
+    };
+    // Platform marks has an overlay slot in the wide layout but no zone in the
+    // ultra ones — where it used to be dropped with every gate still green.
+    expect(unplaceableRequiredRoles(manifest, "ultra_landscape")).toEqual(["Platform marks"]);
+    expect(unplaceableRequiredRoles(manifest, "wide_landscape")).toEqual([]);
+  });
+
+  it("does not treat a model-painted role as a loss", () => {
+    const manifest = {
+      sourceAsset: "YJp814" as const,
+      sourceWidth: 1920,
+      sourceHeight: 1080,
+      layers: [{ id: "hero", role: "Hero" as const, file: "hero.png", required: true, z: 20 }],
+    };
+    expect(unplaceableRequiredRoles(manifest, "wide_landscape")).toEqual([]);
   });
 });

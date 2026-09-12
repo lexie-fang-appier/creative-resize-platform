@@ -7,7 +7,7 @@ import { logGenerationRun } from "./sheets-log";
 import { NARAKA_SOURCES, sourcePath, type NarakaSourceId } from "./creative-analysis";
 import type { RecipeMatch } from "./generation";
 import { GLOBAL_SAFETY_RULES } from "./prompts";
-import { buildExtremeBackgroundPrompt, buildWideBasePrompt, composeExtremeLayout, EXTREME_COMPOSITOR_VERSION, extremeManifestPath, loadExtremeLayerManifest, missingExtremeRoles, missingWideOverlayRoles, requiresExtremeCompositor, suggestWideTextRatio, WIDE_OVERLAY_VERSION } from "./extreme-compositor";
+import { buildExtremeBackgroundPrompt, buildWideBasePrompt, composeExtremeLayout, EXTREME_COMPOSITOR_VERSION, extremeManifestPath, loadExtremeLayerManifest, missingExtremeRoles, missingWideOverlayRoles, requiresExtremeCompositor, suggestWideTextRatio, unplaceableRequiredRoles, WIDE_OVERLAY_VERSION } from "./extreme-compositor";
 
 const execFileAsync = promisify(execFile);
 
@@ -361,6 +361,20 @@ export async function generateNarakaCandidates(labels: ConfirmedLayerLabel[], ta
       blocked.push({ id: targetId, status: "pass_to_designer", ruleCodes, reasons });
       await logGenerationRun({ timestamp: new Date().toISOString(), runId, sourceAsset, targetSize: targetId, phase: "preflight", status: "pass_to_designer", model: "not_called", quality, promptVersion: NARAKA_PROMPT_VERSION, cacheKey: "not_created", requestId: null, processingTimeMs: Date.now() - started, apiCostUsd: 0, outputUri: null, errorCode: ruleCodes.join(","), errorMessage: reasons.join(" "), actor, labelSnapshotHash, usageJson: null });
       continue;
+    }
+    // A required layer the target's layout has no zone for is a loss, not a
+    // degradation: the compositor exits on it, but only after the plate has
+    // been paid for. Catch it here instead.
+    const compositorFamily = extremeFamily ?? (useWideProtectedOverlay ? "wide_landscape" as const : null);
+    if (compositorFamily && extremeManifest) {
+      const unplaceable = unplaceableRequiredRoles(extremeManifest, compositorFamily);
+      if (unplaceable.length > 0) {
+        const ruleCodes = ["required_role_has_no_layout_zone"];
+        const reasons = [`The ${compositorFamily} layout has no zone for required ${unplaceable.join(", ")}; this target cannot be composed without dropping it.`];
+        blocked.push({ id: targetId, status: "pass_to_designer", ruleCodes, reasons });
+        await logGenerationRun({ timestamp: new Date().toISOString(), runId, sourceAsset, targetSize: targetId, phase: "preflight", status: "pass_to_designer", model: "not_called", quality, promptVersion: NARAKA_PROMPT_VERSION, cacheKey: "not_created", requestId: null, processingTimeMs: Date.now() - started, apiCostUsd: 0, outputUri: null, errorCode: ruleCodes.join(","), errorMessage: reasons.join(" "), actor, labelSnapshotHash, usageJson: null });
+        continue;
+      }
     }
     const missingWideRoles = useWideProtectedOverlay && extremeManifest ? missingWideOverlayRoles(labels, extremeManifest) : [];
     if (useWideProtectedOverlay && (!extremeManifest || missingWideRoles.length > 0)) {

@@ -24,13 +24,17 @@ const LABELS = [
   { name: "Character", machineLabel: "Hero", finalLabel: "Hero", decision: "confirmed", importance: "required" as const },
 ];
 
+function spyOnFetch() {
+  return vi.spyOn(globalThis, "fetch");
+}
+
 describe("cache hits never reach the paid API", () => {
-  let fetchSpy: ReturnType<typeof vi.spyOn>;
+  let fetchSpy: ReturnType<typeof spyOnFetch>;
 
   beforeEach(() => {
     mocks.access.mockReset().mockResolvedValue(undefined); // the cached file exists
     mocks.logGenerationRun.mockReset().mockResolvedValue(undefined);
-    fetchSpy = vi.spyOn(globalThis, "fetch");
+    fetchSpy = spyOnFetch();
   });
 
   afterEach(() => {

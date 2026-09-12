@@ -28,6 +28,29 @@ export interface ExtremeLayerManifest {
   layers: ExtremeLayerAsset[];
 }
 
+export type CompositorFamily = "ultra_landscape" | "ultra_portrait" | "wide_landscape";
+
+/** Mirrors the zone tables in scripts/compose_extreme_layout.py. Kept in sync by
+ * tests/extreme-compositor.test.ts, which reads the script's own --describe
+ * output rather than trusting this copy. */
+export const COMPOSITOR_ZONE_ROLES: Record<CompositorFamily, readonly ExtremeLayerRole[]> = {
+  ultra_landscape: ["Brand logo", "Hero", "Headline", "Supporting copy", "CTA", "Compliance"],
+  ultra_portrait: ["Brand logo", "Hero", "Headline", "Supporting copy", "CTA", "Compliance"],
+  wide_landscape: ["Brand logo", "Headline", "Supporting copy", "CTA", "Platform marks", "Compliance", "Supporting visual"],
+};
+
+/** Roles the image model paints into the plate, so having no overlay slot for
+ * them is correct rather than a loss. */
+export const MODEL_PAINTED_ROLES: readonly ExtremeLayerRole[] = ["Hero", "Decorative"];
+
+/** Required layers this family has nowhere to put. The compositor exits on these,
+ * but it only runs after the plate has been bought — checking here means the
+ * target routes to the Designer before anything is paid for. */
+export function unplaceableRequiredRoles(manifest: ExtremeLayerManifest, family: CompositorFamily): ExtremeLayerRole[] {
+  const placeable = new Set<string>([...COMPOSITOR_ZONE_ROLES[family], ...MODEL_PAINTED_ROLES, "Background"]);
+  return [...new Set(manifest.layers.filter((layer) => layer.required && !placeable.has(layer.role)).map((layer) => layer.role))];
+}
+
 export function requiresExtremeCompositor(width: number, height: number): boolean {
   const ratio = width / height;
   return ratio > 4 || ratio < 1 / 3;
