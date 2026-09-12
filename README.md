@@ -10,9 +10,10 @@ candidate the Designer explicitly approves or rejects.
 **Status: working prototype, not yet in production use.** The full flow
 below runs end-to-end against real Google Drive data. The two things that
 are still manual rather than automated are called out explicitly in
-"Known limitations" — most importantly, **there is no image-generation API
-wired up yet**, so the actual redesign work is done by a person (via Claude
-Code) reading the platform's own generated brief, not by a model.
+"Known limitations". The authenticated NARAKA `/workspace` MVP now has an
+OpenAI image-edit path with cache, exact-size finalization, Sheet logging,
+and a verified-fixture fallback. The generic Job flow still queues redesign
+work for manual processing rather than executing the image API.
 
 Source of truth for anything not covered here (Phase 2+ deterministic
 execution, Analytics, SSO, client-facing self-service):
@@ -44,11 +45,13 @@ Google Sheet instead (see "What's built").
 
 **2. Scan** — a real, recursive Drive listing (skips `Done`/`Resize`
 subfolders, which routinely hold already-shipped creative that would
-otherwise contaminate the source pool). Each file is probed by format:
-images get their pixel dimensions, video gets duration/resolution via
-`ffprobe`, PSD/AI get canvas size and a layer manifest via `psd-tools`/`pypdf`.
-Files download 4-at-a-time — the real bottleneck we measured is Drive
-download throughput, not local processing.
+otherwise contaminate the source pool). The listing pass reads Drive metadata
+only and downloads nothing; pixel dimensions and video duration come from what
+Drive already computed. The Designer then picks one source file (ranked, with
+the reason shown — PSD over flat, reusable named layers over flattened), and
+only that file is downloaded and probed: canvas size and a layer manifest via
+`psd-tools`/`pypdf`, duration/resolution via `ffprobe`. A folder of 300MB PSDs
+used to cost minutes of probing files nobody was going to resize.
 
 **3. Asset Inventory** — every scanned file, with format/dimensions/file
 size/PSD layer info. Click a row to expand a live preview in place: JPG/PNG
@@ -140,9 +143,19 @@ real client's candidate output.*
 
 Worth reading before evaluating this as more finished than it is.
 
-- **No image-generation API is connected.** Generate only queues a job; a
-  person does the actual redesign (step 7 above). This is the single
-  biggest gap between "prototype" and "production tool."
+- **Image generation is Workspace-only.** `/workspace` calls the OpenAI Image
+  Edit API after labels are confirmed; generic Job Generate still only queues a
+  run for someone to execute by hand.
+- **Extracted-layer composition needs a hand-written layer map per asset.**
+  `scripts/prepare_extreme_layers.py` maps PSD layer names to roles from a
+  literal table with two assets in it. Anything at or past 3:1 routes through
+  the compositor and therefore needs that table filled in first, so a new
+  client's asset does not work end-to-end without an edit to the script.
+- **Example assets are not in the repo.** `public/examples/naraka/` is a real
+  client's key art plus the layers extracted from it, and is gitignored for the
+  same reason 0ca46c8 removed screenshots showing real client names. A fresh
+  clone renders `/workspace` without images until those sources are fetched
+  from the ticket's Drive folder and `prepare_extreme_layers.py` is run.
 - **Output is always a flattened PNG, never an editable PSD.** The
   PSD-manipulation library used throughout (`psd-tools`) can read and
   flatten layers but cannot reliably write a new PSD with edited layer
@@ -158,8 +171,8 @@ Worth reading before evaluating this as more finished than it is.
   this app's own storage (`/api/outputs/...`), not copied into a
   draft/approved folder in the client's Drive as the long-term design calls
   for.
-- **No authentication.** Every route is open; there's no login, no
-  per-client access control.
+- **Authentication is company-wide, not client-scoped.** Google SSO restricts
+  access to `@appier.com`, but there is no per-client authorization model yet.
 - **No preview for `.ai` files or video** in the Asset Inventory — `.ai`
   flattening needs `pymupdf`, which isn't a dependency here (see 16 Ref for
   why that path has real ceilings); video thumbnailing isn't implemented.
@@ -203,8 +216,8 @@ it's never silent). To scan a real folder: create a service account in the
 | Designer Review (Approve/Reject) | Real, with a required rejection-reason taxonomy including "unspecified / overall impression". |
 | Asset Inventory inline preview | Real for JPG/PNG/PSD; not implemented for `.ai`/video. |
 | Deterministic execution (actual resize/crop/compress) | Not built — routes are decided, but nothing runs the resize itself yet. |
-| OpenAI/other image-gen integration | Not built. |
-| Google Workspace SSO | Config scaffolding only, not wired into any page. |
+| OpenAI/other image-gen integration | NARAKA `/workspace` MVP only: authenticated edit API, cache, exact-size finalizer, Sheet audit log, and explicit fixture fallback. |
+| Google Workspace SSO | Wired through NextAuth and restricted to `@appier.com`; valid OAuth credentials are still required per environment. |
 | Analytics dashboard | Not built. |
 
 ---
