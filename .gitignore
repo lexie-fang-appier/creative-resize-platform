@@ -29,3 +29,12 @@ venv/
 # anchored with a leading slash so this doesn't also match
 # app/api/outputs/, which is real app code, not generated content.
 /outputs/
+
+# Experiment scratch renders (real client derivatives, same reason as /outputs/).
+/output/
+
+# Real client source art and the transparent layers extracted from it. Code that
+# reads these paths is tracked; the pixels are not — same stance as 0ca46c8,
+# which removed committed screenshots showing real client names. Fetch the
+# sources from the ticket's Drive folder, then run prepare_extreme_layers.py.
+/public/examples/naraka/
