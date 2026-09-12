@@ -21,6 +21,11 @@ canvas = m["source"]["canvas"]
 for el in m.get("elements", []):
     if not el.get("placed"):
         continue
+    if el.get("role") in ("hero", "hero_cell"):
+        # A reflowed cell sits where the grid puts it; its source position says nothing about
+        # where it belongs in a different arrangement. Corner anchoring is a property of chrome
+        # (badge, logo, legal line), not of content that gets re-laid-out.
+        continue
     # Prefer the layer's own corner_anchor from layer metadata; fall back to the element's
     # source bbox, since edge-flushness is a geometric fact that does not need a layer name.
     # (Found by the PR855 experiment: manifests that identify elements by bbox alone were

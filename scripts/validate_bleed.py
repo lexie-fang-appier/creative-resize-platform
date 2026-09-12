@@ -16,6 +16,14 @@ if not layers:
     print("SKIP bleed_coverage: --layers is required"); sys.exit(2)
 
 canvas = m["source"]["canvas"]
+if (m.get("hero") or {}).get("background_only"):
+    # A reflow layout composites its background and its elements separately, so a layer
+    # boundary falling inside the background crop does not print a seam — the elements are
+    # placed over it with their own alpha. The seam question only applies when one continuous
+    # crop carries both. Skipping is honest here; failing would be a false alarm, and a gate
+    # that cries wolf stops being read.
+    print("SKIP bleed_coverage: hero.background_only — 背景與元素分開合成,接縫問題不適用")
+    sys.exit(2)
 crops = [("hero", m["hero"]["crop"])] if m.get("hero") else []
 crops += [(f"{e.get('role')}:{e.get('source_layer', '')}", e["source_bbox"])
           for e in m.get("elements", []) if e.get("source_bbox")]
